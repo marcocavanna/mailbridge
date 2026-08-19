@@ -66,6 +66,11 @@ export interface Message extends MessageSummary {
   references: string[];
   text: string | undefined;
   html: string | undefined;
+  /**
+   * Where `text` came from. `converted-html` means the sender shipped no plain-text part and the body
+   * was derived from the HTML — worth stating rather than passing a conversion off as the original.
+   */
+  bodySource: 'text' | 'converted-html' | 'none';
   attachments: Attachment[];
 }
 

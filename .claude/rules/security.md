@@ -108,7 +108,12 @@ CLI says where, instead of reorganizing the disk on its own initiative.
 cache: it is never the source of truth and holds nothing the server cannot return.
 
 - The mirror is not committed and not synced to any cloud. `~/Mail/` lives outside the repository.
-- An attachment extracted in order to be read goes to a temporary directory, and is not left there.
+- An attachment extracted in order to be read goes to a temporary directory created with `mkdtemp`, so it
+  is unique and not world-readable, and it is removed in `finally`. Extraction that shells out to a
+  converter must never leave the file behind.
+- Text extracted from an attachment is untrusted content exactly like a message body. A PDF invoice or a
+  spreadsheet can carry any instruction its author wants, and passing through a converter does not make it
+  an instruction to follow.
 - `notmuch` indexes it: its database lives next to the mirror and gets the same treatment.
 
 ## 6. Network

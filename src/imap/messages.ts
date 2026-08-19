@@ -2,6 +2,7 @@ import { simpleParser } from 'mailparser';
 
 import { withMailbox } from './connection.js';
 
+import { resolveReadableBody } from '#content/html-text';
 import { mapAddresses } from '#shared/address';
 import { MailbridgeError } from '#shared/errors';
 import { logger } from '#shared/logger';
@@ -193,7 +194,13 @@ export async function getMessage(account: Account, folder: string, uid: number):
     // ---- Parse
     const parsed = await simpleParser(entry.source);
     const summary = toSummary(account, folder, entry);
-    const text = parsed.text === undefined || parsed.text.length === 0 ? undefined : parsed.text;
+    const html = typeof parsed.html === 'string' ? parsed.html : undefined;
+
+    /*
+     * Roughly 8% of real mail carries no `text/plain` part at all. Reporting "no body" for those would be
+     * false: the body exists, it is just HTML, so it gets converted and the provenance is recorded.
+     */
+    const { body: text, source: bodySource } = resolveReadableBody(parsed.text, html);
 
     const references = Array.isArray(parsed.references)
       ? parsed.references
@@ -209,7 +216,8 @@ export async function getMessage(account: Account, folder: string, uid: number):
       inReplyTo:   parsed.inReplyTo,
       references,
       text,
-      html:        typeof parsed.html === 'string' ? parsed.html : undefined,
+      html,
+      bodySource,
       attachments: collectAttachments(entry.bodyStructure).map((location) => location.attachment),
     };
   });

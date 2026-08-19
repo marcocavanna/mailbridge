@@ -10,6 +10,7 @@ import { registerOrganizeTools } from '#tools/organize.tools';
 import { registerReadTools } from '#tools/read.tools';
 import { registerSendTools } from '#tools/send.tools';
 import { registerSubscriptionTools } from '#tools/subscription.tools';
+import { registerTriageTools } from '#tools/triage.tools';
 
 /* --------
  * Constants
@@ -68,6 +69,7 @@ export function createServer(): McpServer {
   );
 
   registerReadTools(server);
+  registerTriageTools(server);
   registerOrganizeTools(server);
   registerBulkTools(server);
   registerFolderTools(server);

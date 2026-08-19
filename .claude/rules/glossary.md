@@ -25,6 +25,9 @@ anchored **gets reported and written here**, never guessed.
 | mailing list | `SubscriptionGroup` | Bulk mail grouped by `List-Id`, or by sender when there is none. Carries the uids ready for a bulk operation |
 | unsubscribe target | `UnsubscribeTarget` | An `http` or `mailto` URI from `List-Unsubscribe`. Reported, never opened |
 | bulk operation | — | A move or flag change over a set of uids, handed to the server in one IMAP command. Capped at 500 |
+| readable body | `bodySource` | Where a message body came from: `text` (as written), `converted-html` (derived), `none` |
+| extracted text | `ExtractedText` | An attachment turned into text, with the `method` used and a note when it could not be |
+| awaiting reply | `AwaitingThread` | A thread whose **last** message is not the owner's. `neverReplied` separates "never answered" from "answered, then they came back" |
 | scheduled sync | `AgentStatus` | LaunchAgent state: installed, loaded, cadence, last outcome |
 | agent bundle | `MailbridgeSync.app` | An ad-hoc signed app bundle (`com.marcocavanna.mailbridge`) that launchd starts in place of Node, so the system shows a sensible name |
 

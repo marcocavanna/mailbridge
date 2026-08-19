@@ -28,6 +28,15 @@ Vitest. Test what earns its place; do not pad for coverage.
 - **The bulk cap**: that it is enforced, counted after deduplication, and that the message reaching the
   model carries the limit and the way out — asserted on `toAgentMessage()`, not on `message` alone,
   since the number lives in `remediation`.
+- **HTML conversion**: that `style` and `script` are dropped, entities decoded, and **tables rendered as
+  tables**. That last one is not cosmetic: the library flattens them by default, and an invoice arriving
+  as a two-column table becomes `a1b2` — information destroyed rather than formatted badly.
+- **Attachment routing**: that the content type picks the right extractor, and that the file extension is
+  the fallback when the type is `application/octet-stream`. That type was the second most common in the
+  corpus, so the fallback is what makes those attachments readable at all.
+- **Path parsing in the mirror**: recovering a folder from a Maildir filename, nested folders included.
+- **Header casing**: notmuch returns capitalized header names, IMAP fetches return them lowercase.
+  Matching one casing only would classify every newsletter as personal mail.
 - **Plist generation**: interval conversion, XML escaping, and the presence of the values whose absence
   would make the agent fail silently (the homebrew PATH, `--quiet`, the log level). The generated plist is
   also validated with `plutil -lint`, which is the real judge.

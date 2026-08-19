@@ -28,6 +28,11 @@
       "development": "./src/config/*.ts",
       "default": "./dist/config/*.js"
     },
+    "#content/*": {
+      "types": "./src/content/*.ts",
+      "development": "./src/content/*.ts",
+      "default": "./dist/content/*.js"
+    },
     "#imap/*": {
       "types": "./src/imap/*.ts",
       "development": "./src/imap/*.ts",
@@ -83,13 +88,16 @@
     "@clack/prompts": "1.7.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "commander": "15.0.0",
+    "html-to-text": "10.0.0",
     "imapflow": "1.7.1",
     "mailparser": "3.9.15",
     "nodemailer": "9.0.5",
     "picocolors": "1.1.1",
+    "unpdf": "1.8.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@types/html-to-text": "9.0.4",
     "@types/mailparser": "3.4.6",
     "@types/node": "26.2.0",
     "@types/nodemailer": "8.0.1",

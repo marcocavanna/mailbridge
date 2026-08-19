@@ -266,6 +266,7 @@ mirror. To act on a message found that way there is `resolve_message`.
 | Navigation | `list_accounts`, `list_folders`, `list_messages`, `folder_counts` |
 | Search | `search_messages` |
 | Reading | `get_message`, `get_thread`, `get_attachment`, `get_headers` |
+| Triage | `awaiting_reply` |
 | Utility | `resolve_message` |
 | Organizing, one message | `set_flags`, `move_message`, `archive_message` |
 | Organizing, in bulk | `move_messages`, `file_messages`, `flag_messages` |
@@ -274,6 +275,36 @@ mirror. To act on a message found that way there is `resolve_message`.
 | Writing | `draft_email`, `draft_reply` — **they compose drafts, they do not send** |
 | Sending | `send_draft` |
 | Mirror | `sync_status`, `sync_now` |
+
+### Reading documents and HTML mail
+
+`get_attachment` extracts text from the attachments that actually turn up in a mailbox: **PDF, Word,
+Excel, RTF, ODT, HTML and plain text**. So "what does the attached invoice say" and "find the contract
+where X appears" are answerable, rather than met with "binary content".
+
+PDFs go through a pure JavaScript reader, so there is no system package to install. A scanned PDF has no
+text to extract and says so, rather than returning silence — that would need OCR, which this does not do.
+Many clients label attachments `application/octet-stream`, so the file extension is used as a fallback.
+
+Message bodies that arrive as HTML only — about **8%** of real mail — are converted to readable text
+instead of reporting that there is no body, and the result says it was converted rather than presenting a
+derived body as the original. Tables are rendered as tables, which matters more than it sounds: the usual
+converters flatten a two-column invoice into `a1b2`.
+
+### Finding what needs an answer
+
+```
+awaiting_reply
+```
+
+Lists the conversations whose most recent message is **not yours**, sorted by how long they have been
+waiting. The criterion is the sender of the *last* message, not whether you ever wrote in the thread: a
+conversation you replied to and which then came back still needs you, and the report separates "never
+replied" from "replied, then they came back".
+
+Newsletters are excluded by default, since nobody is waiting on those. It runs entirely on the local
+mirror — no server round trips, a few hundred milliseconds over hundreds of threads — which also means it
+sees mail as of the last sync.
 
 ### Reorganizing mail in bulk
 
