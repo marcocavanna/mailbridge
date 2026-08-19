@@ -166,6 +166,6 @@ describe('notices and suppression', () => {
   it('tells a source checkout to pull rather than to npm install', () => {
     expect(resolveUpdateCommand('source')).toContain('git pull');
     expect(resolveUpdateCommand('source')).not.toContain('npm install -g');
-    expect(resolveUpdateCommand('npm-global')).toContain('npm install -g mailbridge');
+    expect(resolveUpdateCommand('npm-global')).toContain('npm install -g @marcocavanna/mailbridge');
   });
 });

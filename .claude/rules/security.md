@@ -138,7 +138,33 @@ They are also untrusted content like every other part of a message: a URL in a h
 that it belongs to the sender it claims, and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
 (RFC 8058) is a declaration by the sender, not a guarantee.
 
-## 8. The unattended path cannot answer a prompt
+## 8. Known advisory: deepmerge-ts through html-to-text
+
+`pnpm audit` reports a high-severity advisory (GHSA-ggr8-5vv4-36mx, stack exhaustion on recursive object
+graphs) in `deepmerge-ts` below 8.0.0. It arrives transitively through `html-to-text`, which declares
+`^7.1.5` and therefore cannot take the fix on its own. Note it also arrives through `mailparser`, so the
+exposure predates the HTML conversion feature.
+
+**It is not reachable from message content**, and that was checked in the dependency's source rather than
+assumed:
+
+- `html-to-text` calls deepmerge in exactly two places, both merging *configuration*:
+  `deepMergeWithOptionsComposeRules(defaultOptions, userOptions)`, commented "Merge default and user
+  options";
+- the HTML itself goes through `parseDocument(html, …)` from htmlparser2, a separate path that never
+  touches deepmerge.
+
+Exploiting it would require control of the options object passed to `convert()`, and those options are
+hardcoded in `htmlToText`. Untrusted email cannot reach them.
+
+A `pnpm.overrides` entry pins `deepmerge-ts` to `>=8.0.1`, which fixes this repository and anybody
+installing from source. It **does not** protect users installing the published package: overrides apply
+only to a project's root, not to a dependency. Removing `html-to-text` would not help either, since
+`mailparser` pulls the same chain.
+
+Re-check when `html-to-text` widens its range, and drop the override then.
+
+## 9. The unattended path cannot answer a prompt
 
 The scheduled sync runs with no human present. Hence `-T /usr/bin/security` on the Keychain item: without
 it, an agent that hits the confirmation dialog does not fail — it hangs silently.

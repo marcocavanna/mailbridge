@@ -24,10 +24,11 @@ Keychain. No way to delete mail.
 ## Installation
 
 ```bash
-npm install -g mailbridge
+npm install -g @marcocavanna/mailbridge
 ```
 
-That is enough to start: configure an account, then read, search, organize and send.
+That is enough to start: configure an account, then read, search, organize and send. The command it
+installs is `mailbridge` — the package is scoped, the binary is not.
 
 ```bash
 mailbridge account add

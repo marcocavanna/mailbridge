@@ -1,5 +1,5 @@
 {
-  "name": "mailbridge",
+  "name": "@marcocavanna/mailbridge",
   "version": "0.1.0",
   "description": "MCP server for IMAP/SMTP mailboxes: read, search, organize, draft and send mail from an AI assistant. Passwords stay in the macOS Keychain and mail is never deleted.",
   "keywords": [
@@ -131,6 +131,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "deepmerge-ts": ">=8.0.1"
+    }
   }
 }

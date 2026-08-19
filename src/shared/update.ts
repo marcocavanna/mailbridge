@@ -9,7 +9,16 @@ import { VERSION } from './version.js';
  * Constants
  * -------- */
 
-const REGISTRY_URL = 'https://registry.npmjs.org/mailbridge/latest';
+/**
+ * The published package is scoped. npm refused the bare `mailbridge` name as too similar to an existing
+ * `mail-bridge`, and the scope sidesteps that policy — the binary is still called `mailbridge`, since `bin`
+ * is independent of the package name.
+ *
+ * The slash in the scope has to be encoded for the registry path.
+ */
+const PACKAGE_NAME = '@marcocavanna/mailbridge';
+
+const REGISTRY_URL = `https://registry.npmjs.org/${encodeURIComponent(PACKAGE_NAME)}/latest`;
 
 /** Abbreviated registry document: kilobytes instead of the full packument. */
 const REGISTRY_ACCEPT = 'application/vnd.npm.install-v1+json';
@@ -101,7 +110,7 @@ export function compareVersions(left: string, right: string): number {
 export function resolveInstallKind(): InstallKind {
   const here = fileURLToPath(new URL('.', import.meta.url));
 
-  if (here.includes(join('node_modules', 'mailbridge'))) {
+  if (here.includes(join('node_modules', ...PACKAGE_NAME.split('/')))) {
     return 'npm-global';
   }
 
@@ -115,7 +124,7 @@ export function resolveInstallKind(): InstallKind {
 }
 
 export function resolveUpdateCommand(kind: InstallKind): string {
-  return kind === 'source' ? 'git pull && pnpm install && pnpm build' : 'npm install -g mailbridge@latest';
+  return kind === 'source' ? 'git pull && pnpm install && pnpm build' : `npm install -g ${PACKAGE_NAME}@latest`;
 }
 
 /* --------
