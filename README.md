@@ -22,73 +22,61 @@ Keychain. No way to delete mail.
 
 ## Installation
 
-### 1. System dependencies
-
 ```bash
-brew install isync notmuch
+npm install -g mailbridge
 ```
 
-`isync` provides `mbsync`, which copies mail from IMAP into a local Maildir. `notmuch` builds the
-full-text index that search runs on. You also need **Node ≥ 22** and **pnpm**.
-
-### 2. Build
+That is enough to start: configure an account, then read, search, organize and send.
 
 ```bash
-pnpm install && pnpm build
+mailbridge account add
 ```
 
-### 3. Add your accounts
+It asks for an id, address, hosts and ports for IMAP and SMTP. **The password never passes through
+mailbridge** — the last step hands over to macOS `security`, which asks for it itself: it does not travel
+through this program, does not show up in `ps`, and never lands in a file. It is stored in the Keychain
+under the service `mailbridge:<id>`.
 
-Once per account:
+Accept the offer to test the connection right away: an account configured and never tested is one you
+find broken later.
 
-```bash
-pnpm cli -- account add
-```
-
-It asks for an id, address, hosts and ports for IMAP and SMTP, and whether to enable the local
-mirror.
-
-**The password never passes through mailbridge.** The last step hands over to macOS `security`, which
-asks for it itself: it does not travel through this program, does not show up in `ps`, and never lands
-in a file. It is stored in the Keychain under the service `mailbridge:<id>`.
-
-Once stored, it offers to test the connection right away. Accept: an account configured and never
-tested is one you find broken later.
-
-### 4. First mirror
-
-```bash
-pnpm cli -- sync --all
-```
-
-**This step is slow the first time** — it downloads all the mail from every account. For a mailbox of
-a few thousand messages expect several minutes and a few gigabytes on disk. Later syncs are
-incremental and quick.
-
-You can skip it: without a mirror, search still works by going through IMAP — slower, and without
-searching inside message bodies.
-
-### 5. Register the server with your MCP client
+### Register the server with your MCP client
 
 For Claude Code:
 
 ```bash
-claude mcp add mailbridge --scope user -- node /absolute/path/to/mailbridge/dist/index.js
+claude mcp add mailbridge -- mailbridge serve
 ```
 
-Any MCP client works: the server speaks the protocol over stdio, and `mailbridge serve` is the same
-entry point. No environment variables to pass — the server finds its configuration on its own and the
-credentials in the Keychain.
+Any MCP client works — the server speaks the protocol over stdio. No environment variables to pass: it
+finds its configuration on its own and the credentials in the Keychain.
 
-### Optional: `mailbridge` from anywhere
+### Optional: fast local search
+
+Everything above works without any system dependency, with search going through `IMAP SEARCH`. For search
+that is orders of magnitude faster and reaches inside message bodies, add the local mirror:
 
 ```bash
-pnpm link --global
+brew install isync notmuch
+mailbridge sync --all
 ```
 
-From then on `mailbridge …` instead of `pnpm cli -- …`.
+`isync` provides `mbsync`, which copies mail into a local Maildir; `notmuch` builds the full-text index.
+**The first sync is slow** — it downloads all the mail from every account, so expect several minutes and a
+few gigabytes on disk for a mailbox of a few thousand messages. Later syncs are incremental and quick.
 
----
+Without them nothing breaks: search says which engine answered, and commands that need the mirror explain
+what is missing and how to install it.
+
+### From source
+
+```bash
+git clone https://github.com/marcocavanna/mailbridge.git
+cd mailbridge && pnpm install && pnpm build
+pnpm cli -- account add
+```
+
+Then `pnpm link --global` to get `mailbridge` on your PATH, or use `pnpm cli -- <args>`.
 
 ## Daily use
 
@@ -392,9 +380,13 @@ index.
 
 ## Requirements and limitations
 
-**macOS only.** Credential storage is built on the macOS Keychain (`/usr/bin/security`) and the
-scheduled sync on `launchd`. The IMAP, SMTP, search and MCP layers are platform-independent; porting
-would mean replacing those two pieces.
+**macOS only.** Credential storage is built on the macOS Keychain (`/usr/bin/security`), the scheduled
+sync on `launchd`, and document extraction partly on `textutil`. The IMAP, SMTP, search and MCP layers are
+platform-independent; porting would mean replacing those pieces. Installing from npm enforces this with
+`"os": ["darwin"]`.
+
+**Node ≥ 22.** No other dependency is required: `isync` and `notmuch` are optional and only power the
+local search index.
 
 Other current limitations, stated rather than hidden:
 

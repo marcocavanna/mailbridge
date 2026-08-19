@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { withSyncLock } from './lock.js';
 import { listMirroredChannels, writeMbsyncrc } from './mbsyncrc.js';
 import { resolveMailRoot, resolveMaildirPath } from './paths.js';
+import { assertMirrorTools } from './prerequisites.js';
 import { recordSync } from './state.js';
 
 import { resolveConfigPath } from '#config/load-accounts';
@@ -126,6 +127,10 @@ export async function runSync(config: AccountsConfig, options: RunSyncOptions = 
 async function runSyncLocked(config: AccountsConfig, options: RunSyncOptions): Promise<SyncSummary> {
   // ---- Options deconstruct
   const { accountIds, onProgress } = options;
+
+  // Checked before anything else: without it a missing binary surfaces as `spawn mbsync ENOENT` repeated
+  // per account, followed by a final error blaming notmuch — pointing at the wrong problem.
+  await assertMirrorTools();
 
   // ---- Prepare
   const mbsyncrcPath = await writeMbsyncrc(config);

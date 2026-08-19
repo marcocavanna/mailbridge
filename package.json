@@ -1,10 +1,7 @@
 {
   "name": "mailbridge",
   "version": "0.1.0",
-  "type": "module",
-  "description": "MCP server for IMAP/SMTP mailboxes: read, search, organize, send",
-  "author": "Marco Cavanna",
-  "license": "MIT",
+  "description": "MCP server for IMAP/SMTP mailboxes: read, search, organize, draft and send mail from an AI assistant. Passwords stay in the macOS Keychain and mail is never deleted.",
   "keywords": [
     "mcp",
     "imap",
@@ -15,6 +12,20 @@
     "mbsync",
     "macos"
   ],
+  "homepage": "https://github.com/marcocavanna/mailbridge#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marcocavanna/mailbridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/marcocavanna/mailbridge/issues"
+  },
+  "author": "Marco Cavanna",
+  "license": "MIT",
+  "type": "module",
+  "os": [
+    "darwin"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -22,6 +33,12 @@
     "mailbridge": "./dist/cli/main.js",
     "mailbridge-mcp": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "accounts.example.json",
+    "README.md",
+    "LICENSE"
+  ],
   "imports": {
     "#config/*": {
       "types": "./src/config/*.ts",
@@ -75,10 +92,11 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "cli": "node dist/cli/main.js",
     "cli:dev": "tsx --conditions=development src/cli/main.ts",
     "dev": "tsx --conditions=development watch src/index.ts",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build",
     "serve": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -120,6 +120,21 @@ Binding rules:
 - An unavailable value prints as `n/a`, and a state never reached prints as what it is (`never`). Do not
   fake a zero.
 
+## Publishing
+
+The package is published to npm, so three things are load-bearing:
+
+- `files` is a **whitelist**. Anything not listed is not published, which is the safe default for a
+  project whose working directory holds a real `accounts.json`.
+- `build` cleans `dist/` first. Without it, a module that gets renamed or split leaves its old compiled
+  file behind, and that dead file ships to users.
+- `prepublishOnly` runs typecheck, tests and build. A broken publish cannot be taken back, only
+  superseded.
+- `os: ["darwin"]` is declared, because the Keychain, `launchd` and `textutil` are not portable.
+
+Optional system tools are checked before use and reported by the formula that provides them — `mbsync`
+comes from `isync`, which nobody guesses. See the note on the optional mirror in `CLAUDE.md`.
+
 ## Scheduled sync (launchd)
 
 On macOS periodic execution means **launchd**, not cron: cron does not wake the machine, does not catch up

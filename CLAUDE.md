@@ -14,7 +14,7 @@ names in `src/imap/folders.ts` and the deliberately non-ASCII test fixture.
 
 | Command | What it does |
 |---|---|
-| `pnpm build` | Compiles TypeScript into `dist/` |
+| `pnpm build` | Cleans `dist/` and compiles. The clean matters: without it, renamed or split modules leave dead files behind that would ship in the published package |
 | `pnpm typecheck` | `tsc --noEmit` over sources, tests and config |
 | `pnpm test` | Vitest, only the tests that earn their place |
 | `pnpm dev` | MCP server in watch mode over stdio |
@@ -35,6 +35,12 @@ Two halves that only meet through the search layer:
 2. **Local mirror** (`mbsync` → Maildir in `~/Mail/<account>/`, `notmuch` index) — source of truth for
    *search*, because `IMAP SEARCH` is slow and implemented differently by every provider. The mirror is
    a cache: it holds nothing that cannot be rebuilt from the server.
+
+The mirror is **optional**, and that is a distribution property, not just a convenience: an `npm install`
+cannot bring `isync` or `notmuch`, so everything has to work without them. Search falls back to IMAP and
+says so; commands that genuinely need the mirror check for the tools first and name the missing formula.
+Anything that turns a missing optional tool into an obscure failure is a bug — the precedent is three
+`spawn mbsync ENOENT` warnings followed by an error blaming notmuch.
 
 | Pointer | File |
 |---|---|
