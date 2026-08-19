@@ -1,0 +1,32 @@
+Return-Path: <sender@example.com>
+Received: from mx1.example.com (mx1.example.com [192.0.2.10])
+	by mx2.example.com with ESMTPS id abc123
+	for <owner@example.com>; Mon, 3 Aug 2026 09:14:22 +0200
+Received: from client.example.com (client.example.com [192.0.2.11])
+	by mx1.example.com with ESMTPA id def456
+Message-ID: <messy-case-001@example.com>
+In-Reply-To: <previous-000@example.com>
+References: <root@example.com> <previous-000@example.com>
+Date: Mon, 3 Aug 2026 09:14:20 +0200
+From: "Rossi, Mario" <mario.rossi@example.com>
+To: Jane Owner <owner@example.com>, accounting: books@example.com, payroll@example.com;
+Cc: =?UTF-8?Q?Luisa_Pi=C3=B9?= <luisa@example.com>
+Subject: =?UTF-8?Q?Re=3A_Quote_n=C2=B0_42_=E2=80=94_perch=C3=A9_cos=C3=AC=3F?=
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="BOUNDARY"
+
+--BOUNDARY
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Good morning,
+the summary is attached. The total =C3=A8 =E2=82=AC 1.240,50.
+
+--BOUNDARY
+Content-Type: text/csv; charset="utf-8"; name="summer summary.csv"
+Content-Disposition: attachment; filename="summer summary.csv"
+Content-Transfer-Encoding: base64
+
+dm9jZTtpbXBvcnRvCmNhbm9uZTsxMDAwLDAwCmV4dHJhOzI0MCw1MAo=
+
+--BOUNDARY--

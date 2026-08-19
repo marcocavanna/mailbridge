@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+
+# Configurazione reale delle caselle: host e utenti veri, non va in repo
+accounts.json
+
+# Nessun artefatto che possa contenere posta reale
+*.eml
+!tests/fixtures/*.eml
+.DS_Store
+.idea/

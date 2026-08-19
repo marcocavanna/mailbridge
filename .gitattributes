@@ -1,0 +1,9 @@
+# Default: normalize line endings in text files.
+* text=auto eol=lf
+
+# Message fixtures are byte-exact captures of real mail. RFC 5322 mandates CRLF, so
+# normalizing them to LF would strip the very property they exist to test.
+*.eml -text
+
+# Generated lockfile: keep diffs out of review noise.
+pnpm-lock.yaml -diff linguist-generated

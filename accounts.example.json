@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "id": "work",
+      "label": "Your Name",
+      "address": "you@example.com",
+      "imap": {
+        "host": "imap.example.com",
+        "port": 993,
+        "secure": true,
+        "user": "you@example.com"
+      },
+      "smtp": {
+        "host": "smtp.example.com",
+        "port": 465,
+        "secure": true
+      },
+      "folders": {
+        "sent": "INBOX.Sent",
+        "archive": "INBOX.Archive"
+      },
+      "mirror": {
+        "enabled": true
+      }
+    }
+  ]
+}

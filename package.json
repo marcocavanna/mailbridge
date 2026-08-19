@@ -1,0 +1,105 @@
+{
+  "name": "mailbridge",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "MCP server for IMAP/SMTP mailboxes: read, search, organize, send",
+  "author": "Marco Cavanna",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "imap",
+    "smtp",
+    "email",
+    "model-context-protocol",
+    "notmuch",
+    "mbsync",
+    "macos"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "mailbridge": "./dist/cli/main.js",
+    "mailbridge-mcp": "./dist/index.js"
+  },
+  "imports": {
+    "#config/*": {
+      "types": "./src/config/*.ts",
+      "development": "./src/config/*.ts",
+      "default": "./dist/config/*.js"
+    },
+    "#imap/*": {
+      "types": "./src/imap/*.ts",
+      "development": "./src/imap/*.ts",
+      "default": "./dist/imap/*.js"
+    },
+    "#mirror/*": {
+      "types": "./src/mirror/*.ts",
+      "development": "./src/mirror/*.ts",
+      "default": "./dist/mirror/*.js"
+    },
+    "#schedule/*": {
+      "types": "./src/schedule/*.ts",
+      "development": "./src/schedule/*.ts",
+      "default": "./dist/schedule/*.js"
+    },
+    "#search/*": {
+      "types": "./src/search/*.ts",
+      "development": "./src/search/*.ts",
+      "default": "./dist/search/*.js"
+    },
+    "#secrets/*": {
+      "types": "./src/secrets/*.ts",
+      "development": "./src/secrets/*.ts",
+      "default": "./dist/secrets/*.js"
+    },
+    "#shared/*": {
+      "types": "./src/shared/*.ts",
+      "development": "./src/shared/*.ts",
+      "default": "./dist/shared/*.js"
+    },
+    "#smtp/*": {
+      "types": "./src/smtp/*.ts",
+      "development": "./src/smtp/*.ts",
+      "default": "./dist/smtp/*.js"
+    },
+    "#tools/*": {
+      "types": "./src/tools/*.ts",
+      "development": "./src/tools/*.ts",
+      "default": "./dist/tools/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "cli": "node dist/cli/main.js",
+    "cli:dev": "tsx --conditions=development src/cli/main.ts",
+    "dev": "tsx --conditions=development watch src/index.ts",
+    "serve": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json"
+  },
+  "dependencies": {
+    "@clack/prompts": "1.7.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "commander": "15.0.0",
+    "imapflow": "1.7.1",
+    "mailparser": "3.9.15",
+    "nodemailer": "9.0.5",
+    "picocolors": "1.1.1",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/mailparser": "3.4.6",
+    "@types/node": "26.2.0",
+    "@types/nodemailer": "8.0.1",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
