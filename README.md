@@ -6,7 +6,7 @@ organize, draft and send.
 No third-party service in the data path. No credentials on disk — passwords live only in the macOS
 Keychain. No way to delete mail.
 
-- [Installation](#installation) — five steps, once
+- [Installation](#installation) — one command
 - [Daily use](#daily-use)
 - [Scheduled sync](#scheduled-sync)
 - [Where the files live](#where-the-files-live)
@@ -219,6 +219,17 @@ interactive prompt.
 | `mailbridge sync --all` | all of them |
 | `mailbridge sync --status` | status without syncing |
 | `mailbridge sync --quiet` | flat output with timestamps — what the agent invokes |
+
+### Scheduled sync
+
+| Command | |
+|---|---|
+| `mailbridge schedule status` | whether it is on, cadence, last outcome, log location |
+| `mailbridge schedule enable` | enable or reconfigure, interactively |
+| `mailbridge schedule enable --interval 30 --all` | same, without questions, for scripts |
+| `mailbridge schedule run` | run now, in the agent's own environment |
+| `mailbridge schedule logs` | last lines of the logs |
+| `mailbridge schedule disable` | disable, keeping the logs |
 
 ### Server
 
