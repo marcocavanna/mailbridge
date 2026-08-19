@@ -132,6 +132,28 @@ The package is published to npm, so three things are load-bearing:
   superseded.
 - `os: ["darwin"]` is declared, because the Keychain, `launchd` and `textutil` are not portable.
 
+### The update check
+
+The CLI asks the npm registry whether a newer version exists, at most once a day, and reports it on the way
+out. Four constraints shape it, and each one rules out reaching for `update-notifier` off the shelf:
+
+- **Interactive paths only.** Never under `serve`, where stdout carries the MCP protocol, and never under
+  `sync --quiet`, whose output is a log file the scheduled agent appends to every few minutes.
+- **It never adds latency.** The request starts before the command's real work and is collected after it,
+  with a 2s network timeout and a 500ms wait at the end. If the answer is late, the command finishes
+  silently and the cache lands for next time.
+- **Silence is the default on every failure.** Offline, DNS failure, timeout, or a 404 because the package
+  is not published under this name — none of them are worth a warning.
+- **It is reversible.** It honours `MAILBRIDGE_NO_UPDATE_CHECK`, the conventional `NO_UPDATE_NOTIFIER`, and
+  stays quiet in CI. A program that reads mail and calls a third party unasked has to let the user say no.
+
+The upgrade instruction adapts to how the copy was installed: telling somebody who cloned the repository to
+run `npm install -g` would install a second copy beside their checkout.
+
+The version has **one** source, `#shared/version`, read from `package.json`. It used to be copied into the
+CLI banner, the MCP handshake and the LaunchAgent bundle — three places that drift apart with nothing
+noticing.
+
 Optional system tools are checked before use and reported by the formula that provides them — `mbsync`
 comes from `isync`, which nobody guesses. See the note on the optional mirror in `CLAUDE.md`.
 

@@ -9,6 +9,7 @@ import { listAccounts, showStatus, testAccount } from './account-read-actions.js
 import { addAccountFlow, editAccountFlow, removeAccountFlow } from './account-write-actions.js';
 import { prompts, required } from './prompt-helpers.js';
 import { renderIntro } from './shell.js';
+import { startUpdateCheck } from './update-check.js';
 import { runSyncWithFeedback, showSyncState, syncFlow } from './sync-actions.js';
 
 /* --------
@@ -109,6 +110,9 @@ async function syncMenu(): Promise<void> {
  * command for every operation.
  */
 export async function interactiveMenu(): Promise<void> {
+  // Same reasoning as `framed`: kicked off before the menu, reported on the way out.
+  const updateCheck = startUpdateCheck();
+
   renderIntro();
 
   let running = true;
@@ -136,6 +140,12 @@ export async function interactiveMenu(): Promise<void> {
     } else {
       await scheduleMenu();
     }
+  }
+
+  const notice = await updateCheck.collect();
+
+  if (notice !== undefined) {
+    prompts.log.info(notice);
   }
 
   prompts.outro('Done.');

@@ -14,13 +14,14 @@ import { AGENT_LABEL, buildAgentPlist, resolveAgentPlistPath, resolveLogDirector
 
 import { MailbridgeError } from '#shared/errors';
 import { logger } from '#shared/logger';
+import { VERSION } from '#shared/version';
 
 /* --------
  * Constants
  * -------- */
 
 /** Version baked into the bundle. */
-const AGENT_VERSION = '0.1.0';
+const AGENT_VERSION = VERSION;
 
 /* --------
  * Types

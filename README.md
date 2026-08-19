@@ -16,6 +16,7 @@ Keychain. No way to delete mail.
 - [Reorganizing mail in bulk](#reorganizing-mail-in-bulk)
 - [Troubleshooting](#troubleshooting)
 - [Requirements and limitations](#requirements-and-limitations)
+- [Update checks](#update-checks)
 - [Development](#development)
 
 ---
@@ -401,6 +402,24 @@ Other current limitations, stated rather than hidden:
   populates; the tool says so when it uses it.
 
 ---
+
+## Update checks
+
+The CLI checks the npm registry for a newer version at most once a day and mentions it when a command
+finishes. It never delays anything: the request runs alongside the work with a two-second timeout, and if
+the answer is late the command ends silently.
+
+It is silent on every failure — offline, timeout, or a package not published under that name — and it never
+runs on the paths where output matters: the MCP server writes protocol to stdout, and `sync --quiet` writes
+a log file the scheduled agent appends to.
+
+To turn it off:
+
+```bash
+export MAILBRIDGE_NO_UPDATE_CHECK=1
+```
+
+The conventional `NO_UPDATE_NOTIFIER` is honoured too, and checks are skipped in CI.
 
 ## Development
 

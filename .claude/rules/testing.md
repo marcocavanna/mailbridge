@@ -37,6 +37,10 @@ Vitest. Test what earns its place; do not pad for coverage.
 - **Path parsing in the mirror**: recovering a folder from a Maildir filename, nested folders included.
 - **Header casing**: notmuch returns capitalized header names, IMAP fetches return them lowercase.
   Matching one casing only would classify every newsletter as personal mail.
+- **Version comparison**: that `1.10.0` ranks above `1.2.0`. A string comparison gets this backwards and
+  would tell users on the newer version to downgrade.
+- **The update check opt-out**: that both the project variable and the conventional `NO_UPDATE_NOTIFIER`
+  are honoured, and that CI stays quiet.
 - **Plist generation**: interval conversion, XML escaping, and the presence of the values whose absence
   would make the agent fail silently (the homebrew PATH, `--quiet`, the log level). The generated plist is
   also validated with `plutil -lint`, which is the real judge.

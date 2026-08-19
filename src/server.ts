@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { closeAllConnections } from '#imap/connection';
 import { closeAllTransporters } from '#smtp/send';
 import { logger } from '#shared/logger';
+import { VERSION } from '#shared/version';
 import { registerBulkTools } from '#tools/bulk.tools';
 import { registerFolderTools } from '#tools/folder.tools';
 import { registerMirrorTools } from '#tools/mirror.tools';
@@ -18,7 +19,7 @@ import { registerTriageTools } from '#tools/triage.tools';
 
 const SERVER_NAME = 'mailbridge';
 
-const SERVER_VERSION = '0.1.0';
+const SERVER_VERSION = VERSION;
 
 /**
  * Instructions the client receives along with the tool list. They are the first defence against
