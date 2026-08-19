@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { compareVersions, isUpdateCheckEnabled } from '#cli/update-check';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  compareVersions,
+  isUpdateCheckEnabled,
+  readPendingNotice,
+  readUpdateState,
+  resolveUpdateCommand,
+  suppressUpdateNotices,
+} from '#shared/update';
 
 /* --------
  * compareVersions
@@ -104,5 +115,57 @@ describe('isUpdateCheckEnabled', () => {
     process.env['MAILBRIDGE_NO_UPDATE_CHECK'] = '0';
 
     expect(isUpdateCheckEnabled()).toBe(true);
+  });
+});
+
+/* --------
+ * Suppression and notices
+ * -------- */
+
+describe('notices and suppression', () => {
+  const saved = { ...process.env };
+  let directory: string;
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'mailbridge-update-'));
+    process.env['MAILBRIDGE_CONFIG'] = join(directory, 'accounts.json');
+    delete process.env['MAILBRIDGE_NO_UPDATE_CHECK'];
+    delete process.env['NO_UPDATE_NOTIFIER'];
+    delete process.env['CI'];
+  });
+
+  afterEach(() => {
+    process.env = { ...saved };
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('reports nothing with a cold cache, instead of guessing', () => {
+    expect(readPendingNotice()).toBeUndefined();
+  });
+
+  it('stores and clears a suppression window', () => {
+    const until = suppressUpdateNotices(48);
+
+    expect(until).toBeDefined();
+    expect(readUpdateState()?.suppressedUntil).toBe(until);
+
+    expect(suppressUpdateNotices(0)).toBeUndefined();
+    expect(readUpdateState()?.suppressedUntil).toBeUndefined();
+  });
+
+  /*
+   * The suppression has to hold for the MCP handshake too, which reads the same state synchronously. If it
+   * leaked there, silencing reminders in one place would keep announcing the update in another.
+   */
+  it('honours a suppression window when reading the pending notice', () => {
+    suppressUpdateNotices(48);
+
+    expect(readPendingNotice()).toBeUndefined();
+  });
+
+  it('tells a source checkout to pull rather than to npm install', () => {
+    expect(resolveUpdateCommand('source')).toContain('git pull');
+    expect(resolveUpdateCommand('source')).not.toContain('npm install -g');
+    expect(resolveUpdateCommand('npm-global')).toContain('npm install -g mailbridge');
   });
 });

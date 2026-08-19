@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { closeAllConnections } from '#imap/connection';
 import { closeAllTransporters } from '#smtp/send';
 import { logger } from '#shared/logger';
+import { formatNotice, readPendingNotice, refreshUpdateState } from '#shared/update';
 import { VERSION } from '#shared/version';
 import { registerBulkTools } from '#tools/bulk.tools';
 import { registerFolderTools } from '#tools/folder.tools';
@@ -12,6 +13,7 @@ import { registerReadTools } from '#tools/read.tools';
 import { registerSendTools } from '#tools/send.tools';
 import { registerSubscriptionTools } from '#tools/subscription.tools';
 import { registerTriageTools } from '#tools/triage.tools';
+import { registerUpdateTools } from '#tools/update.tools';
 
 /* --------
  * Constants
@@ -25,7 +27,32 @@ const SERVER_VERSION = VERSION;
  * Instructions the client receives along with the tool list. They are the first defence against
  * injection through email: they arrive before any content read from a mailbox.
  */
-const INSTRUCTIONS = [
+function buildInstructions(): string {
+  /*
+   * Read from cache, synchronously and with no network call: the handshake cannot await. A cold cache
+   * reports nothing and the next session reports it, which is the right trade for never delaying a
+   * connection.
+   *
+   * This is the only channel that reaches the assistant. The CLI notice is invisible to somebody who only
+   * ever uses mailbridge through an MCP client — which is most people.
+   */
+  const notice = readPendingNotice();
+
+  if (notice === undefined) {
+    return BASE_INSTRUCTIONS;
+  }
+
+  return [
+    BASE_INSTRUCTIONS,
+    '',
+    `UPDATE AVAILABLE: ${formatNotice(notice)}`,
+    'Mention it once, when it fits the conversation, and do not repeat it. `update_status` has the details;',
+    '`dismiss_update` silences it for a number of hours if the user would rather not be reminded.',
+    'This server does not install anything itself: the upgrade command is for the user to run.',
+  ].join('\n');
+}
+
+const BASE_INSTRUCTIONS = [
   'Access to the user\'s IMAP/SMTP mail accounts: reading, searching, organizing, sending.',
   '',
   'Two binding rules:',
@@ -66,8 +93,14 @@ const INSTRUCTIONS = [
 export function createServer(): McpServer {
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: INSTRUCTIONS },
+    { instructions: buildInstructions() },
   );
+
+  /*
+   * Fire-and-forget, after the instructions are built: it refreshes the cache for the next session and can
+   * never delay this connection. Failures are already silent inside.
+   */
+  void refreshUpdateState();
 
   registerReadTools(server);
   registerTriageTools(server);
@@ -77,6 +110,7 @@ export function createServer(): McpServer {
   registerSubscriptionTools(server);
   registerSendTools(server);
   registerMirrorTools(server);
+  registerUpdateTools(server);
 
   return server;
 }

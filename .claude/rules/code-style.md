@@ -150,6 +150,21 @@ out. Four constraints shape it, and each one rules out reaching for `update-noti
 The upgrade instruction adapts to how the copy was installed: telling somebody who cloned the repository to
 run `npm install -g` would install a second copy beside their checkout.
 
+**Two channels, two audiences.** The CLI notice reaches whoever runs commands in a terminal. Most people
+only ever use mailbridge through an MCP client and would never see it, so the notice is also appended to
+the server's `instructions` at handshake time — read from cache **synchronously**, because the handshake
+cannot await. A cold cache says nothing and the next session says it, which is the right trade for never
+delaying a connection.
+
+**There is no tool that performs the upgrade**, and that is a deliberate departure from comparable servers.
+This one reads untrusted mail: a tool that runs `npm install -g` would put package installation one step
+away from content an attacker controls, and "the user consented" is thin cover when the request to upgrade
+could itself have been planted in an email. `update_status` reports the command; running it stays with the
+person at the keyboard.
+
+`dismiss_update` has to be honoured by **both** channels, since they read the same state. A suppression that
+leaked into the handshake would keep announcing an update the user already silenced.
+
 The version has **one** source, `#shared/version`, read from `package.json`. It used to be copied into the
 CLI banner, the MCP handshake and the LaunchAgent bundle — three places that drift apart with nothing
 noticing.

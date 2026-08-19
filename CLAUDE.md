@@ -64,7 +64,7 @@ src/schedule/  LaunchAgent for the scheduled sync: plist and launchctl control
 src/tools/     one file per group of MCP tools — wiring only, zero logic
 src/cli/       the CLI: dispatch, interactive flows, rendering
 src/content/   turning content into readable text: HTML bodies, attachment documents
-src/shared/    errors, logging, domain types
+src/shared/    errors, logging, domain types, version and update state
 ```
 
 Two boundaries that are not crossed:

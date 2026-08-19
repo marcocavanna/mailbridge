@@ -264,6 +264,7 @@ mirror. To act on a message found that way there is `resolve_message`.
 | Writing | `draft_email`, `draft_reply` — **they compose drafts, they do not send** |
 | Sending | `send_draft` |
 | Mirror | `sync_status`, `sync_now` |
+| Version | `update_status`, `dismiss_update` |
 
 ### Reading documents and HTML mail
 
@@ -405,9 +406,23 @@ Other current limitations, stated rather than hidden:
 
 ## Update checks
 
-The CLI checks the npm registry for a newer version at most once a day and mentions it when a command
-finishes. It never delays anything: the request runs alongside the work with a two-second timeout, and if
-the answer is late the command ends silently.
+mailbridge checks the npm registry for a newer version at most once a day, through two channels for two
+audiences.
+
+In the **CLI** the notice appears when a command finishes. Through an **MCP client** it is appended to the
+server's instructions at connection time, so the assistant can mention it in conversation — which matters
+because somebody who only uses mailbridge through Claude would never see the CLI notice.
+
+Two tools go with it: `update_status` reports the running version, the latest published one and the exact
+upgrade command for your install; `dismiss_update` silences reminders for a number of hours.
+
+**No tool installs anything.** That is deliberate, and it is where this differs from similar servers: this
+one reads untrusted mail, so a tool that ran `npm install -g` would put package installation one step away
+from content an attacker controls — and "the user agreed" is thin cover when the request to upgrade could
+have been planted in an email. The command is reported; you run it.
+
+Checks never delay anything: the request runs alongside the work with a two-second timeout, and if the
+answer is late the command ends silently.
 
 It is silent on every failure — offline, timeout, or a package not published under that name — and it never
 runs on the paths where output matters: the MCP server writes protocol to stdout, and `sync --quiet` writes
