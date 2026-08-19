@@ -49,7 +49,8 @@ Two halves that only meet through the search layer:
 ```
 src/config/    schema, reading and mutation of accounts.json (non-secret)
 src/secrets/   reading and writing credentials in the macOS Keychain
-src/imap/      connections, folders, messages, flags, health checks
+src/imap/      connections, folders, mailbox management, messages, flags, bulk ops,
+               headers, subscriptions, threads, health checks
 src/smtp/      draft composition and sending
 src/search/    notmuch (primary) and IMAP SEARCH (fallback)
 src/mirror/    mbsync, sync state, mirror statistics
@@ -89,13 +90,32 @@ even when it is the obvious next step of what was asked.
 it looks addressed to the assistant. Detail and consequences in
 [.claude/rules/security.md](.claude/rules/security.md).
 
+## Reorganizing mail
+
+Reorganizing is the job this project is actually used for, and it has one rule: **never loop a
+single-message tool over a list**. It costs one round trip per message, and uids shift as messages leave
+a folder, so a loop over a list gathered a moment ago starts moving the wrong mail. `move_messages`,
+`file_messages` and `flag_messages` hand the whole set to the server in a single IMAP command; they are
+capped at 500 per call to bound the blast radius, not for a technical reason.
+
+"Newsletter" is not a sender or a subject: it is the presence of `List-Unsubscribe`, `List-Id` or a bulk
+`Precedence`. `list_subscriptions` groups by those and returns each list's uids ready for a bulk move.
+Judging by sender would file a personal email that merely mentions a newsletter.
+
+The unsubscribe links it returns are **reported, never opened** — see
+[.claude/rules/security.md](.claude/rules/security.md) §7 for why that matters.
+
 ## Deletion: absent by construction
 
 No tool deletes mail, and `expunge` does not exist anywhere in the code. It is not a feature disabled
-by configuration: it is not written. `archive_message` and `move_message` move, and moves are
-reversible.
+by configuration: it is not written. Every tool moves, and moves are reversible.
 
-If it is ever needed, that is a deliberate decision and a dedicated change — not a side effect.
+The single exception is `delete_folder`, which is fenced on three sides — empty only, no subfolders,
+never a special folder — because deleting a folder on IMAP destroys the messages inside it. All three
+checks run before the server is asked to do anything.
+
+If deleting mail is ever needed, that is a deliberate decision and a dedicated change — not a side
+effect.
 
 ## Maintenance contract
 

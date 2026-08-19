@@ -1,8 +1,6 @@
-import { execFile } from 'node:child_process';
 import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 
 import {
   BUNDLE_DISPLAY_NAME,
@@ -11,6 +9,7 @@ import {
   resolveBundleExecutablePath,
   writeAppBundle,
 } from './app-bundle.js';
+import { resolveGuiTarget, runLaunchctl } from './launchctl.js';
 import { AGENT_LABEL, buildAgentPlist, resolveAgentPlistPath, resolveLogDirectory } from './plist.js';
 
 import { MailbridgeError } from '#shared/errors';
@@ -20,14 +19,8 @@ import { logger } from '#shared/logger';
  * Constants
  * -------- */
 
-const LAUNCHCTL_BIN = '/bin/launchctl';
-
-const COMMAND_TIMEOUT_MS = 20_000;
-
 /** Version baked into the bundle. */
 const AGENT_VERSION = '0.1.0';
-
-const execFileAsync = promisify(execFile);
 
 /* --------
  * Types
@@ -67,10 +60,6 @@ export interface InstallAgentOptions {
  * Helpers
  * -------- */
 
-function resolveGuiTarget(): string {
-  return `gui/${process.getuid?.() ?? 0}`;
-}
-
 /**
  * Path of `dist/cli/main.js`, derived from where this module is running.
  *
@@ -91,22 +80,6 @@ async function exists(path: string): Promise<boolean> {
     return true;
   } catch {
     return false;
-  }
-}
-
-async function runLaunchctl(args: readonly string[]): Promise<{ stdout: string; code: number }> {
-  try {
-    const { stdout } = await execFileAsync(LAUNCHCTL_BIN, [...args], {
-      timeout:   COMMAND_TIMEOUT_MS,
-      maxBuffer: 1024 * 1024,
-    });
-
-    return { stdout, code: 0 };
-  } catch (cause) {
-    const code = typeof (cause as { code?: unknown }).code === 'number' ? (cause as { code: number }).code : 1;
-    const stdout = typeof (cause as { stdout?: unknown }).stdout === 'string' ? (cause as { stdout: string }).stdout : '';
-
-    return { stdout, code };
   }
 }
 

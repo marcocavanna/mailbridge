@@ -20,6 +20,14 @@ Vitest. Test what earns its place; do not pad for coverage.
 - **The sync lock**: that it is released even on error, that it refuses a concurrent sync, and that it
   recognizes a lock abandoned by a dead process. A held lock blocks every later sync, and the only way out
   would be deleting a file by hand.
+- **Header parsing**: folded headers (RFC 5322 §2.2.3), repeated names, the empty line that ends the
+  block. `List-Unsubscribe` is long by nature and therefore usually folded, so a line-by-line split
+  would silently truncate exactly the header that matters most.
+- **Bulk mail recognition**: that a personal message merely *mentioning* newsletters is not classified
+  as bulk. Getting this wrong would file real correspondence when somebody asks to archive newsletters.
+- **The bulk cap**: that it is enforced, counted after deduplication, and that the message reaching the
+  model carries the limit and the way out — asserted on `toAgentMessage()`, not on `message` alone,
+  since the number lives in `remediation`.
 - **Plist generation**: interval conversion, XML escaping, and the presence of the values whose absence
   would make the agent fail silently (the homebrew PATH, `--quiet`, the log level). The generated plist is
   also validated with `plutil -lint`, which is the real judge.

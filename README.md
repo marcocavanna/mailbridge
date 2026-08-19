@@ -13,6 +13,7 @@ Keychain. No way to delete mail.
 - [Commands](#commands)
 - [How search works](#how-search-works)
 - [What the assistant can and cannot do](#what-the-assistant-can-and-cannot-do)
+- [Reorganizing mail in bulk](#reorganizing-mail-in-bulk)
 - [Troubleshooting](#troubleshooting)
 - [Requirements and limitations](#requirements-and-limitations)
 - [Development](#development)
@@ -262,20 +263,52 @@ mirror. To act on a message found that way there is `resolve_message`.
 
 | Area | Tools |
 |---|---|
-| Navigation | `list_accounts`, `list_folders`, `list_messages` |
+| Navigation | `list_accounts`, `list_folders`, `list_messages`, `folder_counts` |
 | Search | `search_messages` |
-| Reading | `get_message`, `get_thread`, `get_attachment` |
+| Reading | `get_message`, `get_thread`, `get_attachment`, `get_headers` |
 | Utility | `resolve_message` |
-| Organizing | `set_flags`, `move_message`, `archive_message` |
+| Organizing, one message | `set_flags`, `move_message`, `archive_message` |
+| Organizing, in bulk | `move_messages`, `file_messages`, `flag_messages` |
+| Folders | `create_folder`, `rename_folder`, `delete_folder`, `set_folder_subscription` |
+| Newsletters | `list_subscriptions` |
 | Writing | `draft_email`, `draft_reply` — **they compose drafts, they do not send** |
 | Sending | `send_draft` |
 | Mirror | `sync_status`, `sync_now` |
+
+### Reorganizing mail in bulk
+
+This is what the tool is mostly used for, so it is worth knowing how it behaves.
+
+Asking to *"archive all the newsletters"* works because two things line up. `list_subscriptions` scans a
+folder, groups bulk mail by mailing list, and hands back each list's message uids. `file_messages` then
+moves a whole set in a **single** IMAP operation — never a loop, which would cost a round trip per
+message and, worse, would act on stale uids as messages leave the folder.
+
+A newsletter is recognized by its `List-Unsubscribe`, `List-Id` or `Precedence` headers, not by sender or
+subject: judging by those would file a personal email that merely mentions a newsletter.
+
+Asking *"find the unsubscribe links for all my newsletters"* works the same way — the links come out of
+the same headers, and they are reported for you to read. **Nothing opens them.** Fetching an unsubscribe
+URL confirms your address is live and monitored, which on unsolicited mail is exactly what the sender
+wants to learn; on real spam, unsubscribing is counterproductive.
+
+Bulk operations are capped at 500 messages per call. Not a technical limit: it bounds how much a mistake
+or a prompt injection can reorganize before you notice. Since every operation is reversible, the cost of
+hitting the cap is running it again.
+
+Filing to `trash` puts mail in the Trash folder rather than deleting it — recoverable from there, though
+servers commonly purge that folder on their own schedule. `archive` is the destination that keeps mail
+indefinitely.
 
 ### Three structural guarantees
 
 **There is no way to delete mail.** No tool does it and `expunge` is not implemented in any module: it
 is not a disabled feature, it is not written. The worst a bug or a successful attack can produce is a
 **moved** message, and moves are reversible.
+
+The one exception is `delete_folder`, and it is fenced on three sides: empty folders only, no
+subfolders, never a special folder. Deleting a folder on IMAP destroys the messages inside it, so a
+folder holding mail is refused with the count and you move the messages first.
 
 **Nothing goes out unless you ask.** `send_draft` is the only tool that sends anything, and it takes a
 **draft already saved on the server** — not a body. What goes out is always something you can read

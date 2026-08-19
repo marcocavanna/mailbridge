@@ -63,6 +63,31 @@ addressed to *those* recipients.
 No tool deletes mail. `expunge` is not implemented in any module. The worst case of a bug or a
 successful injection is **moved** mail, hence recoverable — not destroyed mail.
 
+Filing to Trash (`file_messages` with `target: trash`) is a move like any other, but it is worth being
+precise about: mail servers commonly purge Trash on their own schedule, so it is the one destination
+that is recoverable *for a while* rather than indefinitely. `archive` is the one that keeps mail.
+
+### `delete_folder` is the single fenced exception
+
+Deleting a folder on IMAP destroys the messages inside it, which would make it the only operation in
+this project capable of losing data. It is fenced on three sides, and all three are checked before the
+server is asked to do anything:
+
+- **empty only** — a folder holding messages is refused with the count, so the way forward is to move
+  them first;
+- **no subfolders** — refused with their names, since deleting a parent takes the children with it;
+- **never a special folder** — the account needs its inbox, sent, drafts, archive, trash and junk.
+
+The empty check is not proof against a race with another client connected at the same time. It turns
+the ordinary accident into an error message, which is what it is for.
+
+### Bulk operations have a blast-radius cap
+
+`move_messages`, `file_messages` and `flag_messages` act on at most 500 messages per call. The limit is
+not technical — IMAP would take far more — it bounds how much a mistaken or injected instruction can
+reorganize before somebody notices. Everything they do is reversible, so the cost of hitting the cap is
+running the operation again.
+
 ### Removing an account: three objects, three treatments
 
 `mailbridge account remove` distinguishes between them, and this is not pedantry: the three objects have
@@ -93,7 +118,22 @@ fallback, and no disabling certificate verification — a `rejectUnauthorized: f
 a bug, not a shortcut. If a server has a broken certificate, that is a deliberate decision and has to be
 written down with the reason.
 
-## 7. The unattended path cannot answer a prompt
+## 7. Unsubscribe links are reported, never opened
+
+`list_subscriptions` returns the URLs found in `List-Unsubscribe` headers. Those are **URLs written by
+whoever sent the bulk mail**, and two things follow.
+
+Fetching one confirms that the address is live and monitored. On legitimate mail that is merely how
+unsubscribing works; on unsolicited mail it is precisely what the sender wants to learn, and validating
+an address against a spam list is worse than leaving the mail unread. The tool therefore reports the
+links for the account owner to read and decide on — nothing in this project opens them, and nothing
+should.
+
+They are also untrusted content like every other part of a message: a URL in a header is not evidence
+that it belongs to the sender it claims, and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
+(RFC 8058) is a declaration by the sender, not a guarantee.
+
+## 8. The unattended path cannot answer a prompt
 
 The scheduled sync runs with no human present. Hence `-T /usr/bin/security` on the Keychain item: without
 it, an agent that hits the confirmation dialog does not fail — it hangs silently.

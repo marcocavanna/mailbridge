@@ -20,6 +20,11 @@ anchored **gets reported and written here**, never guessed.
 | mirror statistics | `MirrorStats` | Size on disk and indexed counts. Every measure is optional: `undefined` means "not measurable", rendered as `n/a` |
 | connection test | `AccountHealth` | Outcome for credential, IMAP and SMTP. Sends nothing and changes nothing |
 | probe | `ProbeResult` | A single test: `ok` \| `failed` \| `skipped` |
+| header block | `HeaderMap` | Header name in lowercase → its values. A list, because a header can legitimately repeat |
+| bulk mail | — | Mail carrying `List-*` headers or a bulk `Precedence`. What "newsletter" means operationally: never sender or subject |
+| mailing list | `SubscriptionGroup` | Bulk mail grouped by `List-Id`, or by sender when there is none. Carries the uids ready for a bulk operation |
+| unsubscribe target | `UnsubscribeTarget` | An `http` or `mailto` URI from `List-Unsubscribe`. Reported, never opened |
+| bulk operation | — | A move or flag change over a set of uids, handed to the server in one IMAP command. Capped at 500 |
 | scheduled sync | `AgentStatus` | LaunchAgent state: installed, loaded, cadence, last outcome |
 | agent bundle | `MailbridgeSync.app` | An ad-hoc signed app bundle (`com.marcocavanna.mailbridge`) that launchd starts in place of Node, so the system shows a sensible name |
 
