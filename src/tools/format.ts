@@ -76,15 +76,26 @@ export async function runTool(name: string, handler: () => Promise<ToolTextResul
  * Formatters
  * -------- */
 
-export function formatMessageSummary(entry: MessageSummary): string {
+export interface MessageSummaryOptions {
+  /**
+   * Print the folder of each message. Worth it only when the summaries do not all come from the same
+   * one, which for a conversation spread over `Sent` and an archive folder is the normal case.
+   */
+  withFolder?: boolean | undefined;
+}
+
+export function formatMessageSummary(entry: MessageSummary, options: MessageSummaryOptions = {}): string {
   const date = entry.date === undefined ? 'unknown date' : entry.date.slice(0, 16).replace('T', ' ');
   const attachments = entry.hasAttachments ? ' 📎' : '';
 
   return [
     `uid ${entry.uid} · ${date}${attachments}${formatFlagMarks(entry)}`,
+    options.withFolder === true ? `  folder: ${entry.folder}` : undefined,
     `  from: ${formatAddressList(entry.from)}`,
     `  subject: ${entry.subject}`,
-  ].join('\n');
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join('\n');
 }
 
 export function formatSearchHit(entry: SearchHit, position: number): string {

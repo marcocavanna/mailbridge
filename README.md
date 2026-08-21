@@ -404,9 +404,13 @@ local search index.
 
 Other current limitations, stated rather than hidden:
 
-- `get_thread` searches **within a single folder**: a thread with half its messages in `Sent` is not
-  reassembled. Covering it properly needs notmuch as the threading source, which is not guaranteed to
-  be present.
+- `get_thread` reassembles a conversation across folders **only when the notmuch index is there** to
+  name them. Without it the search stays inside the anchor's folder, which for a thread whose outgoing
+  half sits in `Sent` returns a monologue by the other party; the result states which folders were
+  searched, so a partial view is reported as partial rather than as the whole.
+- A folder criterion on the notmuch engine is resolved against the mirror, whose hierarchy `mbsync`
+  explodes: `INBOX.Archive.Suppliers` on the server is `Archive/Suppliers` on disk. A folder that
+  cannot be located there sends the search to the server rather than answering that it is empty.
 - `Bcc` is unsupported when composing. Not an oversight: in a draft it lives as a header, and a send
   that forgets to strip it reveals the hidden recipients to everyone. It has to be done by moving it
   into the SMTP envelope.

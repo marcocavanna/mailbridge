@@ -222,8 +222,11 @@ export function registerReadTools(server: McpServer): void {
     {
       title:       'Read a conversation',
       description: [
-        'Rebuilds the conversation a message belongs to, within its folder.',
-        'A thread whose messages are spread across several folders is not reassembled in full.',
+        'Rebuilds the conversation a message belongs to, across the folders that hold it.',
+        'Replies sent from this mailbox live in the Sent folder, not next to the messages they answer,',
+        'so a conversation read folder-locally comes back as a monologue by the other party.',
+        'The local index supplies the other folders; without it the reconstruction stays folder-local',
+        'and the result says which folders were actually searched.',
       ].join(' '),
       inputSchema: {
         accountId: accountIdShape,
@@ -235,10 +238,17 @@ export function registerReadTools(server: McpServer): void {
     async ({ accountId, folder, uid }) => runTool('get_thread', async () => {
       const account = await requireAccount(accountId);
       const thread = await getThread(account, folder, uid);
+      const isSpread = thread.searchedFolders.length > 1;
 
-      const body = thread.messages.map((entry) => formatMessageSummary(entry)).join('\n\n');
+      const body = thread.messages
+        .map((entry) => formatMessageSummary(entry, { withFolder: isSpread }))
+        .join('\n\n');
 
-      return textResult(`Conversation "${thread.subject}" — ${thread.messages.length} messages:\n\n${body}`);
+      const scope = isSpread
+        ? `, across ${thread.searchedFolders.join(', ')}`
+        : `, in ${folder} only: the local index could not name the other folders of this thread, so anything sent from this mailbox is missing`;
+
+      return textResult(`Conversation "${thread.subject}" — ${thread.messages.length} messages${scope}:\n\n${body}`);
     }),
   );
 

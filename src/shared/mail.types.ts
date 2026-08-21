@@ -83,4 +83,9 @@ export interface Thread {
   rootMessageId: string | undefined;
   subject: string;
   messages: MessageSummary[];
+  /**
+   * The folders the conversation was actually looked for in. A single entry means the reconstruction
+   * stayed folder-local, so anything sent from the mailbox is missing from it.
+   */
+  searchedFolders: string[];
 }
