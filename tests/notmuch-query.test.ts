@@ -58,9 +58,48 @@ describe('buildNotmuchQuery', () => {
   });
 
   it('qualifies the folder with the account, because folder: is relative to the database root', () => {
-    const query = buildNotmuchQuery({ accountId: 'work', folder: 'INBOX.Sent', limit: 10 });
+    const query = buildNotmuchQuery(
+      { accountId: 'work', folder: 'INBOX.Sent', limit: 10 },
+      { accountIds: ['work'], mirrorFolders: new Map([['work', 'Sent']]) },
+    );
 
-    expect(query).toBe('folder:work/INBOX.Sent');
+    expect(query).toBe('folder:work/Sent');
+  });
+
+  /**
+   * The second half of the same mistake. `folder:` needs the path of the mirror, not the path of the
+   * server: mbsync explodes the remote hierarchy, so `INBOX.Archive.Suppliers` is `Archive/Suppliers`
+   * on disk. Built on the IMAP path the term matches nothing, and a search that finds nothing reads
+   * exactly like an empty folder.
+   */
+  it('uses the mirror path, not the IMAP path', () => {
+    const query = buildNotmuchQuery(
+      { accountId: 'work', folder: 'INBOX.Archive.Suppliers', limit: 10 },
+      { accountIds: ['work'], mirrorFolders: new Map([['work', 'Archive/Suppliers']]) },
+    );
+
+    expect(query).toBe('folder:work/Archive/Suppliers');
+    expect(query).not.toContain('INBOX.Archive');
+  });
+
+  it('translates the folder per account, since the same one can sit at a different depth', () => {
+    const query = buildNotmuchQuery(
+      { folder: 'INBOX.Sent', limit: 10 },
+      { accountIds: ['one', 'two'], mirrorFolders: new Map([['one', 'Sent'], ['two', 'INBOX/Sent']]) },
+    );
+
+    expect(query).toBe('(folder:one/Sent or folder:two/INBOX/Sent)');
+  });
+
+  /**
+   * Unresolved, the raw path is kept: it is narrow rather than wrong-in-the-other-direction, and
+   * `executeSearch` never reaches it — it falls back to a server search instead of reporting an empty
+   * folder.
+   */
+  it('falls back to the requested path when the mirror could not resolve it', () => {
+    const query = buildNotmuchQuery({ accountId: 'work', folder: 'INBOX.Ghost', limit: 10 });
+
+    expect(query).toBe('folder:work/INBOX.Ghost');
   });
 
   it('quotes a folder containing spaces, which unquoted would split the term', () => {
@@ -70,7 +109,10 @@ describe('buildNotmuchQuery', () => {
   });
 
   it('expands the folder across every account in scope when no account is given', () => {
-    const query = buildNotmuchQuery({ folder: 'INBOX', limit: 10 }, { accountIds: ['one', 'two'] });
+    const query = buildNotmuchQuery(
+      { folder: 'INBOX', limit: 10 },
+      { accountIds: ['one', 'two'], mirrorFolders: new Map([['one', 'INBOX'], ['two', 'INBOX']]) },
+    );
 
     expect(query).toBe('(folder:one/INBOX or folder:two/INBOX)');
   });

@@ -1,6 +1,8 @@
 import { searchWithImap } from './imap-search.js';
-import { isNotmuchAvailable, searchWithNotmuch } from './notmuch.js';
+import { isNotmuchAvailable } from './notmuch-exec.js';
+import { searchWithNotmuch } from './notmuch.js';
 
+import { resolveMirrorFolder } from '#mirror/paths';
 import { computeStalenessMinutes, readMirrorState } from '#mirror/state';
 import { logger } from '#shared/logger';
 
@@ -95,12 +97,37 @@ export async function executeSearch(
     }
   }
 
+  // ---- Folder resolution against the mirror
+  // notmuch indexes the maildir, and mbsync explodes the remote hierarchy into directories: the IMAP
+  // path is not a path the index knows. Resolving it before the engine is committed to is what keeps
+  // an unresolvable folder from being answered as an empty one.
+  const mirrorFolders = new Map<string, string>();
+
+  if (fallbackReason === undefined && criteria.folder !== undefined) {
+    for (const account of mirrored) {
+      const resolved = await resolveMirrorFolder(account, criteria.folder);
+
+      if (resolved !== undefined) {
+        mirrorFolders.set(account.id, resolved);
+      }
+    }
+
+    if (mirrorFolders.size === 0) {
+      fallbackReason = `"${criteria.folder}" is not a folder of the local mirror`;
+    } else if (mirrorFolders.size < mirrored.length) {
+      const missing = mirrored.filter((account) => !mirrorFolders.has(account.id)).map((account) => account.id);
+
+      warnings.push(`"${criteria.folder}" was not found in the mirror of ${missing.join(', ')}: those accounts were not searched.`);
+    }
+  }
+
   // ---- Notmuch path
   if (fallbackReason === undefined) {
     // The ids in scope let the builder qualify a folder criterion: in notmuch `folder:` is relative
     // to the database root, so `INBOX` on its own finds nothing.
     const { hits, query } = await searchWithNotmuch(criteria, {
       accountIds: scope.map((account) => account.id),
+      mirrorFolders,
     });
 
     if (criteria.hasAttachment === true) {
