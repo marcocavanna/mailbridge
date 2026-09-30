@@ -22,7 +22,7 @@ function resolveMbsyncrcPath(): string {
  * The password does not appear: `PassCmd` has mbsync itself read it from the Keychain at sync time.
  * It is the same principle that holds for the server — see `.claude/rules/security.md` §1.
  */
-function buildAccountBlock(account: Account): string {
+export function buildAccountBlock(account: Account): string {
   const service = buildServiceName(account.id, 'imap');
   const maildir = resolveMaildirPath(account);
 
@@ -32,6 +32,7 @@ function buildAccountBlock(account: Account): string {
     `Port ${account.imap.port}`,
     `User ${account.imap.user}`,
     `PassCmd "/usr/bin/security find-generic-password -s '${service}' -a '${account.imap.user}' -w"`,
+    ...(account.imap.authMechs === undefined ? [] : [`AuthMechs ${account.imap.authMechs}`]),
     'TLSType IMAPS',
     'CertificateFile /etc/ssl/cert.pem',
     '',

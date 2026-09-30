@@ -123,6 +123,12 @@ fallback, and no disabling certificate verification — a `rejectUnauthorized: f
 a bug, not a shortcut. If a server has a broken certificate, that is a deliberate decision and has to be
 written down with the reason.
 
+`imap.authMechs` narrows the SASL mechanisms `mbsync` may negotiate, and that is all it does: it never
+touches the transport. It exists because the system `libsasl2` can fail on a mechanism the server merely
+advertises, so restricting to `PLAIN` over IMAPS is the working configuration, not a downgrade. The value
+is written verbatim into the generated `mbsyncrc`, which is why the schema accepts only mechanism names
+and nothing that could carry a newline.
+
 ## 7. Unsubscribe links are reported, never opened
 
 `list_subscriptions` returns the URLs found in `List-Unsubscribe` headers. Those are **URLs written by

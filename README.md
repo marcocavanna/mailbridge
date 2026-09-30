@@ -380,6 +380,18 @@ from the Keychain, IMAP refusing, SMTP refusing. If the password changed: `mailb
 **"One account's sync fails."** Accounts are synced one at a time: one failure does not stop the
 others, and the summary shows the last lines of `mbsync`'s error output.
 
+**"The sync fails with `SASL(-1): generic failure: Unable to find a callback`."** `mbsync` links the
+system `libsasl2`, and when the server advertises a mechanism that library cannot complete (Aruba
+offers `OAUTHBEARER` next to `PLAIN`) it fails before ever trying `PLAIN`. Restrict the mechanisms in
+`accounts.json`, under `imap`:
+
+```json
+"imap": { "host": "imaps.aruba.it", "user": "you@example.com", "authMechs": "PLAIN" }
+```
+
+The value is a space separated list of SASL mechanism names in capitals. It only narrows what
+`mbsync` may negotiate: the connection stays on implicit TLS with certificate verification.
+
 **"The scheduled sync does not start."** `mailbridge schedule status` separates the cases: not
 installed, installed but not loaded, Node gone after an upgrade. Then `mailbridge schedule logs`.
 

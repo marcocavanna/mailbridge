@@ -16,6 +16,16 @@ const hostSchema = z.string().min(1).max(255);
 const portSchema = z.number().int().min(1).max(65535);
 
 /**
+ * SASL mechanism names for `mbsync`'s `AuthMechs`, space separated (`PLAIN`, `LOGIN PLAIN`).
+ *
+ * The value is written verbatim into a generated config file, so the pattern is the guard: a newline
+ * or any other character outside a mechanism name would let `accounts.json` inject directives.
+ */
+const authMechsSchema = z
+  .string()
+  .regex(/^[A-Z0-9_-]+( [A-Z0-9_-]+)*$/, 'use SASL mechanism names in capitals, separated by single spaces');
+
+/**
  * Special folder names. A union of literals: no enum.
  */
 export const SPECIAL_FOLDERS = ['inbox', 'sent', 'drafts', 'archive', 'trash', 'junk'] as const;
@@ -32,6 +42,14 @@ const imapSchema = z.object({
   /** Implicit TLS. `false` is not supported: see `.claude/rules/security.md` §6. */
   secure: z.literal(true).default(true),
   user:   z.string().min(1),
+  /**
+   * Restricts the SASL mechanisms `mbsync` may negotiate. Absent = let SASL choose.
+   *
+   * Needed when the server advertises a mechanism the system `libsasl2` cannot complete, which makes
+   * `mbsync` fail before it ever tries `PLAIN`: Aruba offering `OAUTHBEARER` is the precedent. It does
+   * not relax transport security: TLS stays mandatory, see `.claude/rules/security.md` §6.
+   */
+  authMechs: authMechsSchema.optional(),
 });
 
 const smtpSchema = z.object({
