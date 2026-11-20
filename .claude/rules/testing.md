@@ -67,6 +67,11 @@ Vitest. Test what earns its place; do not pad for coverage.
 - **A message held by two mirrors** (a mailbox moved to a new server, old mirror still on disk) is
   attributed to the copy of the account in scope, and dropped when no copy is in scope: notmuch keeps one
   message per `Message-Id`, and the first file it lists can belong to the wrong mirror.
+- **Moving an account to another server**: the new configuration saved, the old mirror moved outside the
+  mail root and never deleted, the sync history cleared even with no mirror on disk; and **nothing
+  changed at all** while a sync holds the lock or when the destination already exists.
+- **The sync lock is exclusive**: created with `wx`, so of two acquisitions only one passes; a live lock
+  survives past one hour, because a first sync on several accounts legitimately runs that long.
 - **A half-filled mirror stays out of the index**: a mirror whose only runs failed is searched on the
   server, and the last success survives a later failure. Older state files are read by their outcome.
 

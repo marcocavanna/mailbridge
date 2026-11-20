@@ -1,4 +1,5 @@
 import { collectAuth, signInFlow, storeCredentialFor } from './account-auth-actions.js';
+import { confirmAndSwitchServer, offerFirstSync } from './account-server-actions.js';
 import { renderAccountDetail } from './account-view.js';
 import { pickAccount, requireOverview } from './account-resolve.js';
 import { testAccount } from './account-read-actions.js';
@@ -8,6 +9,7 @@ import { colors, formatBytes, heading } from './ui.js';
 import { accountSchema } from '#config/accounts.schema';
 import { addAccount, removeAccount, updateAccount } from '#config/write-accounts';
 import { resolveMaildirPath } from '#mirror/paths';
+import { isServerChange } from '#mirror/server-switch';
 import { readMirrorStats } from '#mirror/stats';
 import { deletePassword, promptAndStorePassword } from '#secrets/keychain-write';
 
@@ -164,14 +166,27 @@ export async function editAccountFlow(accountId?: string): Promise<void> {
   }
 
   const updated = await collectAccount(entry.account);
+  const movesServer = isServerChange(entry.account, updated);
 
-  await updateAccount(target, updated);
+  // A move to another server takes the old mirror out of the way and its history with it, under the
+  // sync lock. Any other edit is a plain save.
+  if (movesServer) {
+    if (!(await confirmAndSwitchServer(target, entry.account, updated))) {
+      return;
+    }
+  } else {
+    await updateAccount(target, updated);
+  }
 
   // A switch of sign-in method needs the new credential right away, or the account is configured and
   // unusable.
   if (updated.auth.type !== entry.account.auth.type) {
     prompts.log.warn('The sign-in method changed: the old Keychain item stays where it is, untouched.');
     await storeCredentialFor(updated);
+  }
+
+  if (movesServer) {
+    await offerFirstSync(updated);
   }
 
   prompts.log.success(`Account "${target}" updated${updated.id === target ? '' : ` and renamed to "${updated.id}"`}.`);

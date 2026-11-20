@@ -137,8 +137,25 @@ Only the **refresh token** is kept, in the Keychain under `mailbridge:<id>:oauth
 tokens live in memory for their hour. Microsoft replaces the refresh token on every use and mailbridge
 stores the new one, so the sign-in lasts as long as the account is used at least once every 90 days.
 
-An existing password account moved to OAuth keeps its old Keychain item untouched under
-`mailbridge:<id>`, and its old mirror on disk: both are yours to delete.
+### Moving an existing account to Microsoft 365
+
+Run `mailbridge account edit <id>`, choose the entry that includes the sign-in method, then
+*Microsoft 365 (OAuth)*, and paste the two IDs. When the host changes, mailbridge treats it as a move to
+another server and, before saving, says what will happen:
+
+- the old mirror is **moved**, not deleted, to `~/Mail-previous/<id>-<old host>-<date>`, outside the
+  mail folder so the index forgets it and nothing appears twice;
+- the account's sync history is cleared, so until the first sync on the new server completes, search on
+  that account goes to the server instead of trusting a mirror that is still filling up;
+- all of it happens under the sync lock, so the scheduled sync cannot start halfway and download the old
+  server again into the folder just emptied.
+
+Then the browser opens for the sign-in, and mailbridge offers to run the first sync right away. A large
+mailbox can take more than the 15 minutes a run is allowed: run `mailbridge sync <id>` again, or let the
+scheduled sync continue, and it resumes where it stopped.
+
+The old Keychain item stays under `mailbridge:<id>` and the old mirror stays in `~/Mail-previous`: both
+are yours to delete once you no longer need them.
 
 ### Tools that speak IMAP themselves
 
@@ -239,6 +256,7 @@ edit <id>` → *The password only*.
 | What | Where |
 |---|---|
 | **Mail mirror** | `~/Mail/<account-id>/` — one directory per account, IMAP folders inside |
+| **Mirrors of a previous server** | `~/Mail-previous/<account-id>-<host>-<date>/`, after an account moves server. Never deleted by mailbridge |
 | **Search index** | `~/Mail/.notmuch/` |
 | **Account configuration** | `~/.config/mailbridge/accounts.json` — hosts and usernames, mode `0600`, **never passwords** |
 | **Sync state** | `~/.config/mailbridge/sync-state.json` |

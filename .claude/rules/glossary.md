@@ -20,7 +20,8 @@ anchored **gets reported and written here**, never guessed.
 | mirror | `Mirror` | The local Maildir copy. A cache, never the source of truth |
 | index | `SearchIndex` | The notmuch database over the mirror |
 | sync | `SyncRun` | A single mbsync execution plus the reindex |
-| sync lock | — | A file at `~/.config/mailbridge/sync.lock`. Records pid and source (`cli` \| `mcp` \| `schedule`) |
+| sync lock | — | A file at `~/.config/mailbridge/sync.lock`, created exclusively. Records pid and source (`cli` \| `mcp` \| `schedule`) |
+| server switch | `switchAccountServer` | An edit that changes `imap.host`: under the sync lock, saves the account, moves the old mirror to `<mail root>-previous/`, clears its sync history |
 | account state | `AccountOverview` | Configuration + credential + last sync + statistics, in one read |
 | mirror statistics | `MirrorStats` | Size on disk and indexed counts. Every measure is optional: `undefined` means "not measurable", rendered as `n/a` |
 | connection test | `AccountHealth` | Outcome for credential, IMAP and SMTP. Sends nothing and changes nothing |

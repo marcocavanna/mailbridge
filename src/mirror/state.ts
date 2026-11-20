@@ -73,6 +73,26 @@ export async function recordSync(accountId: string, entry: AccountSyncState): Pr
 }
 
 /**
+ * Forgets an account's sync history. Used when its mirror starts over, typically after a move to another
+ * server: the old history would make an empty mirror look complete, and search would trust it.
+ */
+export async function forgetSync(accountId: string): Promise<void> {
+  const path = resolveStatePath();
+  const state = await readMirrorState();
+
+  if (state.accounts[accountId] === undefined) {
+    return;
+  }
+
+  delete state.accounts[accountId];
+
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+
+  logger.debug('mirror state forgotten', { accountId });
+}
+
+/**
  * Whether the account's mirror has ever completed a sync. A mirror whose only runs failed may be
  * half filled, typically by a first sync cut short by the timeout, and searching it would answer for a
  * fraction of the mailbox without saying so.

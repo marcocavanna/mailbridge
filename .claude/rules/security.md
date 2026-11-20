@@ -129,6 +129,11 @@ different reversibility.
 | Keychain item | only on a separate question, defaulting to **no** | **Unrecoverable**: the program does not know the password, so it cannot recreate it |
 | Mirror in `~/Mail/<id>` | **never** touched — path and size are printed | It is a rebuildable cache, but rebuilding costs a full sync. Deleting gigabytes of data is not a side effect of removing a configuration entry |
 
+Moving an account to another server follows it too: the old mirror is **moved** to
+`<mail root>-previous/<id>-<host>-<date>`, outside the index, never deleted, and the CLI prints where.
+The move, the new configuration and the cleared sync history happen under the sync lock, so a
+scheduled sync cannot run between them and download the old server again into the emptied path.
+
 The same principle governs disabling a mirror and renaming an id: the files stay where they are and the
 CLI says where, instead of reorganizing the disk on its own initiative.
 
