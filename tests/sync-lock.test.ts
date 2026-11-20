@@ -88,10 +88,45 @@ describe('withSyncLock', () => {
   it('removes a lock that is too old even if the pid looks alive, for the recycled-pid case', async () => {
     await writeFile(lockPath, JSON.stringify({
       pid:       process.pid,
-      startedAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),
+      startedAt: new Date(Date.now() - 5 * 60 * 60_000).toISOString(),
       source:    'ancient',
     }), 'utf8');
 
     await expect(withSyncLock('new', async () => 'restarted')).resolves.toBe('restarted');
+  });
+
+  it('keeps a live lock younger than the longest legitimate run, even past one hour', async () => {
+    await writeFile(lockPath, JSON.stringify({
+      pid:       process.pid,
+      startedAt: new Date(Date.now() - 90 * 60_000).toISOString(),
+      source:    'long-first-sync',
+    }), 'utf8');
+
+    await expect(withSyncLock('new', async () => 'overlapped')).rejects.toThrow(/already running/);
+  });
+
+  it('refuses a second acquisition while the first holds the lock', async () => {
+    let release: () => void = () => undefined;
+    let acquired: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const isHeld = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+
+    // The first holds the lock until told otherwise; the second starts only once it surely holds it.
+    const first = withSyncLock('first', async () => {
+      acquired();
+      await held;
+
+      return 'first';
+    });
+
+    await isHeld;
+    await expect(withSyncLock('second', async () => 'second')).rejects.toThrow(/already running \(pid \d+, started by first\)/);
+
+    release();
+    await expect(first).resolves.toBe('first');
   });
 });

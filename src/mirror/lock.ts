@@ -12,8 +12,12 @@ import { logger } from '#shared/logger';
 /**
  * Past this age a lock is considered abandoned even if the process looks alive: it covers the case of
  * a pid recycled by the system onto an unrelated process.
+ *
+ * Well above the longest legitimate run: each account has 15 minutes, indexing 10, and a first sync of
+ * a large mailbox can take every minute of that on several accounts in a row. At one hour, a live run on
+ * four accounts could be declared abandoned and a second mbsync started on the same channel.
  */
-const STALE_AFTER_MS = 60 * 60_000;
+const STALE_AFTER_MS = 4 * 60 * 60_000;
 
 /* --------
  * Types
@@ -53,6 +57,49 @@ async function readLock(path: string): Promise<LockContent | undefined> {
   }
 }
 
+async function tryCreateLock(path: string, content: LockContent): Promise<boolean> {
+  try {
+    await writeFile(path, `${JSON.stringify(content, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+
+    return true;
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'EEXIST') {
+      return false;
+    }
+
+    throw cause;
+  }
+}
+
+/**
+ * Removes a lock whose process is gone, or one older than any legitimate run. A live, recent lock is
+ * left alone: the caller then fails to acquire and says who holds it.
+ */
+async function removeIfAbandoned(path: string): Promise<void> {
+  const existing = await readLock(path);
+
+  if (existing === undefined) {
+    // Unreadable or vanished in the meantime: a half-written lock is not a reason to sync over it.
+    return;
+  }
+
+  const age = Date.now() - new Date(existing.startedAt).getTime();
+  const alive = isProcessAlive(existing.pid);
+
+  if (alive && age < STALE_AFTER_MS) {
+    return;
+  }
+
+  logger.warn('abandoned sync lock, removing it', {
+    pid:        existing.pid,
+    source:     existing.source,
+    alive,
+    ageMinutes: Math.round(age / 60_000),
+  });
+
+  await rm(path, { force: true });
+}
+
 /* --------
  * Implementation
  * -------- */
@@ -70,29 +117,6 @@ async function readLock(path: string): Promise<LockContent | undefined> {
 export async function withSyncLock<T>(source: string, operation: () => Promise<T>): Promise<T> {
   const path = resolveLockPath();
 
-  // ---- Existing lock
-  const existing = await readLock(path);
-
-  if (existing !== undefined) {
-    const age = Date.now() - new Date(existing.startedAt).getTime();
-    const alive = isProcessAlive(existing.pid);
-
-    if (alive && age < STALE_AFTER_MS) {
-      throw new MailbridgeError('mirror_unavailable', `Another sync is already running (pid ${existing.pid}, started by ${existing.source}).`, {
-        remediation: 'Wait for it to finish, or check `mailbridge schedule status`.',
-      });
-    }
-
-    logger.warn('abandoned sync lock, removing it', {
-      pid: existing.pid,
-      source: existing.source,
-      alive,
-      ageMinutes: Math.round(age / 60_000),
-    });
-
-    await rm(path, { force: true });
-  }
-
   // ---- Acquire
   const content: LockContent = {
     pid:       process.pid,
@@ -101,7 +125,20 @@ export async function withSyncLock<T>(source: string, operation: () => Promise<T
   };
 
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(content, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+
+  // Created exclusively (`wx`): two processes checking "is there a lock?" and then writing one could
+  // both pass the check, and both would sync. With `wx` the second write fails, and only the second.
+  if (!(await tryCreateLock(path, content))) {
+    await removeIfAbandoned(path);
+
+    if (!(await tryCreateLock(path, content))) {
+      const holder = await readLock(path);
+
+      throw new MailbridgeError('mirror_unavailable', `Another sync is already running (pid ${holder?.pid ?? 'unknown'}, started by ${holder?.source ?? 'unknown'}).`, {
+        remediation: 'Wait for it to finish, or check `mailbridge schedule status`.',
+      });
+    }
+  }
 
   try {
     return await operation();
