@@ -86,7 +86,10 @@ export function renderAccountDetail(entry: AccountOverview): string {
     ['sender name', account.label],
     ['address', account.address],
     ['imap', `${account.imap.host}:${account.imap.port} (${account.imap.user})`],
-    ['smtp', `${account.smtp.host}:${account.smtp.port} (${account.smtp.user ?? account.imap.user})`],
+    ['auth', account.auth.type === 'oauth2' ? `OAuth (Microsoft, tenant ${account.auth.tenantId})` : 'password'],
+    ['smtp', account.smtp === undefined
+      ? colors.dim('none: drafts only, sent from the mail client')
+      : `${account.smtp.host}:${account.smtp.port} (${account.smtp.user ?? account.imap.user})`],
     ['credential', credentialCell(entry)],
     ['mirror', mirrorCell(entry)],
   ];

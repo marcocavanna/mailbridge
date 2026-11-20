@@ -65,6 +65,11 @@
       "development": "./src/mirror/*.ts",
       "default": "./dist/mirror/*.js"
     },
+    "#oauth/*": {
+      "types": "./src/oauth/*.ts",
+      "development": "./src/oauth/*.ts",
+      "default": "./dist/oauth/*.js"
+    },
     "#schedule/*": {
       "types": "./src/schedule/*.ts",
       "development": "./src/schedule/*.ts",
@@ -97,7 +102,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc",
+    "build": "rm -rf dist && tsc && chmod +x dist/cli/main.js dist/index.js",
     "cli": "node dist/cli/main.js",
     "cli:dev": "tsx --conditions=development src/cli/main.ts",
     "dev": "tsx --conditions=development watch src/index.ts",

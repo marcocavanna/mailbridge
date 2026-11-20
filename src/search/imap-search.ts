@@ -1,5 +1,5 @@
 import { withMailbox } from '#imap/connection';
-import { resolveSpecialFolder } from '#imap/folders';
+import { listFolders } from '#imap/folders';
 import { mapAddresses } from '#shared/address';
 import { logger } from '#shared/logger';
 
@@ -65,18 +65,17 @@ function describeQuery(query: SearchObject): string {
  * -------- */
 
 /**
- * Searches live over IMAP. This is the fallback when the mirror is unavailable: slower and with less
- * full-text capability, but always up to date.
+ * Searches one folder and fetches the most recent matches, at most `limit`. Within a folder uids grow
+ * with arrival, so the highest are the newest; across folders they mean nothing, which is why the caller
+ * merges on dates.
  */
-export async function searchWithImap(
+async function searchFolder(
   account: Account,
+  folder: string,
+  query: SearchObject,
   criteria: SearchCriteria,
-): Promise<{ hits: SearchHit[]; query: string }> {
-  // ---- Query build
-  const folder = criteria.folder ?? (await resolveSpecialFolder(account, 'inbox'));
-  const query = buildImapQuery(criteria);
-
-  const hits = await withMailbox(account, folder, async (client) => {
+): Promise<SearchHit[]> {
+  return withMailbox(account, folder, async (client) => {
     const uids = await client.search(query, { uid: true });
 
     if (uids === false || uids.length === 0) {
@@ -122,10 +121,59 @@ export async function searchWithImap(
 
     return collected;
   });
+}
 
-  logger.debug('IMAP search completed', { accountId: account.id, folder, found: hits.length });
+/* --------
+ * Implementation
+ * -------- */
 
-  return { hits, query: describeQuery(query) };
+export interface ImapSearchResult {
+  hits: SearchHit[];
+  query: string;
+  /** The folders actually searched, so the result can say where it looked. */
+  folders: string[];
+  /** Folders that could not be searched, with the reason. The rest of the search still counts. */
+  failures: string[];
+}
+
+/**
+ * Searches live over IMAP: always up to date, slower than the index.
+ *
+ * IMAP SEARCH runs inside one selected folder, so a search without a folder criterion visits **every**
+ * selectable folder of the account, one after the other on the account's connection. Searching the inbox
+ * alone would answer a question about the whole mailbox with a fraction of it. A folder that fails is
+ * reported and skipped, not allowed to sink the others.
+ */
+export async function searchWithImap(account: Account, criteria: SearchCriteria): Promise<ImapSearchResult> {
+  // ---- Query Build
+  const query = buildImapQuery(criteria);
+  const folders = criteria.folder !== undefined
+    ? [criteria.folder]
+    : (await listFolders(account)).filter((folder) => folder.isSelectable).map((folder) => folder.path);
+
+  // ---- Search
+  const hits: SearchHit[] = [];
+  const failures: string[] = [];
+
+  for (const folder of folders) {
+    try {
+      hits.push(...await searchFolder(account, folder, query, criteria));
+    } catch (cause) {
+      // A folder chosen explicitly is the whole search: its failure is the answer, not a footnote.
+      if (criteria.folder !== undefined) {
+        throw cause;
+      }
+
+      failures.push(`${folder}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+
+  // ---- Result Mapping
+  hits.sort((left, right) => (right.date ?? '').localeCompare(left.date ?? ''));
+
+  logger.debug('IMAP search completed', { accountId: account.id, folders: folders.length, found: hits.length });
+
+  return { hits: hits.slice(0, criteria.limit), query: describeQuery(query), folders, failures };
 }
 
 /**

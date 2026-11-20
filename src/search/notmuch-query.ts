@@ -114,8 +114,14 @@ export function buildNotmuchQuery(criteria: SearchCriteria, options: NotmuchQuer
     } else if (qualified.length > 1) {
       terms.push(`(${qualified.join(' or ')})`);
     }
-  } else if (criteria.accountId !== undefined) {
-    terms.push(`path:${quoteTerm(`${criteria.accountId}/**`)}`);
+  } else if (accountIds.length > 0) {
+    // Always scoped to the accounts in scope, never the whole database: an account whose mirror was
+    // disabled leaves its files indexed, and for an account moved to another server they are a
+    // different mailbox. Verified against notmuch on 2026-11-20: `(path:"a/**" or path:"b/**")` counts
+    // exactly the sum of the two accounts.
+    const scoped = accountIds.map((accountId) => `path:${quoteTerm(`${accountId}/**`)}`);
+
+    terms.push(scoped.length === 1 ? (scoped[0] ?? '') : `(${scoped.join(' or ')})`);
   }
 
   // ---- Headers

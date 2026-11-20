@@ -1,6 +1,6 @@
 import { ImapFlow } from 'imapflow';
 
-import { getImapPassword } from '#secrets/keychain';
+import { resolveImapAuth } from '#secrets/imap-auth';
 import { MailbridgeError } from '#shared/errors';
 import { logger } from '#shared/logger';
 
@@ -32,17 +32,14 @@ const clients = new Map<string, ImapFlow>();
 
 async function connect(account: Account): Promise<ImapFlow> {
   // ---- Credentials
-  const password = await getImapPassword(account);
+  const auth = await resolveImapAuth(account);
 
   // ---- Connection setup
   const client = new ImapFlow({
     host:   account.imap.host,
     port:   account.imap.port,
     secure: account.imap.secure,
-    auth:   {
-      user: account.imap.user,
-      pass: password,
-    },
+    auth,
     connectionTimeout: CONNECT_TIMEOUT_MS,
     greetingTimeout:   GREETING_TIMEOUT_MS,
     socketTimeout:     SOCKET_TIMEOUT_MS,
@@ -61,7 +58,9 @@ async function connect(account: Account): Promise<ImapFlow> {
     await client.connect();
   } catch (cause) {
     throw new MailbridgeError('imap_connection_failed', `IMAP connection to ${account.imap.host} failed.`, {
-      remediation: 'Check host, port, and that the Keychain credential is still valid.',
+      remediation: account.auth.type === 'oauth2'
+        ? `Check host and port. If the sign-in was revoked, run \`mailbridge account login ${account.id}\`.`
+        : 'Check host, port, and that the Keychain credential is still valid.',
       cause,
     });
   }

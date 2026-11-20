@@ -3,7 +3,7 @@ import { isNotmuchAvailable } from './notmuch-exec.js';
 import { searchWithNotmuch } from './notmuch.js';
 
 import { resolveMirrorFolder } from '#mirror/paths';
-import { computeStalenessMinutes, readMirrorState } from '#mirror/state';
+import { computeStalenessMinutes, hasCompletedSync, readMirrorState } from '#mirror/state';
 import { logger } from '#shared/logger';
 
 import type { SearchCriteria, SearchDiagnostics } from './criteria.types.js';
@@ -50,12 +50,16 @@ function resolveScope(config: AccountsConfig, criteria: SearchCriteria): Account
  * -------- */
 
 /**
- * Runs a search, choosing the engine.
+ * Runs a search, choosing the engine **account by account**.
  *
- * notmuch when the mirror exists and has been synced — orders of magnitude faster, and it searches
- * message bodies. IMAP when the mirror is missing, stale past the threshold, or when the caller
- * explicitly wants fresh data. The choice is always reported in the diagnostics: a search that does
- * not explain where its results came from is a search you cannot trust.
+ * notmuch for the accounts whose mirror exists and has been synced: orders of magnitude faster, and it
+ * searches message bodies. IMAP for the others, across every folder: an account without a mirror, one
+ * never synced, one whose mirror lacks the requested folder, or any account when the caller wants fresh
+ * data. One account without a mirror does not take the index away from the rest, which is what used to
+ * happen when the choice was made for the whole scope at once.
+ *
+ * The choice is always reported in the diagnostics, per account: a search that does not explain where
+ * its results came from is a search you cannot trust.
  */
 export async function executeSearch(
   config: AccountsConfig,
@@ -74,23 +78,41 @@ export async function executeSearch(
     };
   }
 
-  // ---- Engine choice
+  // ---- Engine choice, per account
+  const local: Account[] = [];
+  const remote: { account: Account; reason: string }[] = [];
+
   const mirrored = scope.filter((account) => account.mirror.enabled);
-  let fallbackReason: string | undefined;
 
-  if (options.requireFresh === true) {
-    fallbackReason = 'fresh server data explicitly requested';
-  } else if (mirrored.length < scope.length) {
-    fallbackReason = 'at least one account in scope has no mirror enabled';
-  } else if (!(await isNotmuchAvailable())) {
-    fallbackReason = 'notmuch unavailable, or the index was never built';
-  } else {
+  for (const account of scope) {
+    if (!account.mirror.enabled) {
+      remote.push({ account, reason: 'mirror disabled' });
+    }
+  }
+
+  // Reasons that apply to every mirrored account at once.
+  const sharedReason = options.requireFresh === true
+    ? 'fresh server data explicitly requested'
+    : mirrored.length > 0 && !(await isNotmuchAvailable())
+      ? 'notmuch unavailable, or the index was never built'
+      : undefined;
+
+  if (sharedReason !== undefined) {
+    remote.push(...mirrored.map((account) => ({ account, reason: sharedReason })));
+  } else if (mirrored.length > 0) {
     const state = await readMirrorState();
-    const staleness = computeStalenessMinutes(state, mirrored.map((account) => account.id));
 
-    if (staleness === undefined) {
-      fallbackReason = 'one of the accounts has never been synced';
-    } else if (staleness > STALE_AFTER_MINUTES) {
+    for (const account of mirrored) {
+      if (!hasCompletedSync(state, account.id)) {
+        remote.push({ account, reason: 'the mirror has never completed a sync' });
+      } else {
+        local.push(account);
+      }
+    }
+
+    const staleness = computeStalenessMinutes(state, local.map((account) => account.id));
+
+    if (local.length > 0 && staleness !== undefined && staleness > STALE_AFTER_MINUTES) {
       warnings.push(
         `The mirror is ${Math.round(staleness)} minutes old: messages that arrived later do not appear. Run \`sync_now\`.`,
       );
@@ -99,67 +121,74 @@ export async function executeSearch(
 
   // ---- Folder resolution against the mirror
   // notmuch indexes the maildir, and mbsync explodes the remote hierarchy into directories: the IMAP
-  // path is not a path the index knows. Resolving it before the engine is committed to is what keeps
-  // an unresolvable folder from being answered as an empty one.
+  // path is not a path the index knows. An account whose mirror cannot locate the folder goes to the
+  // server for that folder, rather than being answered as empty or left out.
   const mirrorFolders = new Map<string, string>();
 
-  if (fallbackReason === undefined && criteria.folder !== undefined) {
-    for (const account of mirrored) {
+  if (criteria.folder !== undefined) {
+    for (const account of [...local]) {
       const resolved = await resolveMirrorFolder(account, criteria.folder);
 
-      if (resolved !== undefined) {
+      if (resolved === undefined) {
+        local.splice(local.indexOf(account), 1);
+        remote.push({ account, reason: `"${criteria.folder}" is not a folder of its local mirror` });
+      } else {
         mirrorFolders.set(account.id, resolved);
       }
-    }
-
-    if (mirrorFolders.size === 0) {
-      fallbackReason = `"${criteria.folder}" is not a folder of the local mirror`;
-    } else if (mirrorFolders.size < mirrored.length) {
-      const missing = mirrored.filter((account) => !mirrorFolders.has(account.id)).map((account) => account.id);
-
-      warnings.push(`"${criteria.folder}" was not found in the mirror of ${missing.join(', ')}: those accounts were not searched.`);
     }
   }
 
   // ---- Notmuch path
-  if (fallbackReason === undefined) {
-    // The ids in scope let the builder qualify a folder criterion: in notmuch `folder:` is relative
-    // to the database root, so `INBOX` on its own finds nothing.
-    const { hits, query } = await searchWithNotmuch(criteria, {
-      accountIds: scope.map((account) => account.id),
-      mirrorFolders,
-    });
+  const collected: SearchHit[] = [];
+  const queries: string[] = [];
+
+  if (local.length > 0) {
+    // The ids scope the query to these accounts' directories: the index can hold files of accounts
+    // searched over IMAP, and those must not answer twice, or at all when they are stale.
+    const { hits, query } = await searchWithNotmuch(
+      { ...criteria, accountId: undefined },
+      { accountIds: local.map((account) => account.id), mirrorFolders },
+    );
+
+    collected.push(...hits);
+    queries.push(`notmuch: ${query}`);
 
     if (criteria.hasAttachment === true) {
       warnings.push('The attachment filter uses the notmuch `attachment` tag, which not every index populates.');
     }
-
-    return { hits, diagnostics: { engine: 'notmuch', query, fallbackReason: undefined }, warnings };
   }
 
   // ---- IMAP path
-  logger.debug('searching over IMAP', { fallbackReason, accounts: scope.length });
+  if (remote.length > 0) {
+    logger.debug('searching over IMAP', { accounts: remote.map((entry) => entry.account.id) });
+  }
 
-  const collected: SearchHit[] = [];
-  const queries: string[] = [];
-
-  for (const account of scope) {
+  for (const { account } of remote) {
     try {
-      const { hits, query } = await searchWithImap(account, criteria);
+      const { hits, query, folders, failures } = await searchWithImap(account, criteria);
 
       collected.push(...hits);
-      queries.push(`${account.id}: ${query}`);
+      queries.push(`${account.id} over IMAP, ${folders.length === 1 ? `folder ${folders[0] ?? ''}` : `${folders.length} folders`}: ${query}`);
+
+      if (failures.length > 0) {
+        warnings.push(`On "${account.id}" ${failures.length} folders could not be searched: ${failures.join('; ')}`);
+      }
     } catch (cause) {
       warnings.push(`Search on "${account.id}" failed: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
   }
 
-  // ---- Result mapping
+  // ---- Result Mapping
   collected.sort((left, right) => (right.date ?? '').localeCompare(left.date ?? ''));
+
+  const engine = remote.length === 0 ? 'notmuch' : local.length === 0 ? 'imap' : 'mixed';
+  const fallbackReason = remote.length === 0
+    ? undefined
+    : remote.map(({ account, reason }) => `${account.id}: ${reason}`).join('; ');
 
   return {
     hits:        collected.slice(0, criteria.limit),
-    diagnostics: { engine: 'imap', query: queries.join(' | '), fallbackReason },
+    diagnostics: { engine, query: queries.join(' | '), fallbackReason },
     warnings,
   };
 }

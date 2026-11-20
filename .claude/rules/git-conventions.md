@@ -8,7 +8,7 @@ fix(search): escape notmuch query operators in subject terms
 docs(rules): record the untrusted-input model
 ```
 
-Scopes in use: `imap`, `smtp`, `search`, `mirror`, `schedule`, `tools`, `cli`, `config`, `secrets`,
+Scopes in use: `imap`, `smtp`, `oauth`, `search`, `mirror`, `schedule`, `tools`, `cli`, `config`, `secrets`,
 `rules`, `deps`.
 
 ## Nothing leaves the machine unasked

@@ -8,7 +8,7 @@ import { getSmtpPassword } from '#secrets/keychain';
 import { MailbridgeError } from '#shared/errors';
 import { logger } from '#shared/logger';
 
-import type { Account } from '#config/accounts.schema';
+import type { Account, SmtpConfig } from '#config/accounts.schema';
 import type { Transporter } from 'nodemailer';
 
 /* --------
@@ -40,7 +40,7 @@ const transporters = new Map<string, Transporter>();
  * Helpers
  * -------- */
 
-async function getTransporter(account: Account): Promise<Transporter> {
+async function getTransporter(account: Account, smtp: SmtpConfig): Promise<Transporter> {
   const existing = transporters.get(account.id);
 
   if (existing !== undefined) {
@@ -51,13 +51,13 @@ async function getTransporter(account: Account): Promise<Transporter> {
   const password = await getSmtpPassword(account);
 
   const transporter = createTransport({
-    host:   account.smtp.host,
-    port:   account.smtp.port,
-    secure: account.smtp.secure,
+    host:   smtp.host,
+    port:   smtp.port,
+    secure: smtp.secure,
     /** STARTTLS is mandatory on 587: never send in plaintext. See `security.md` §6. */
-    requireTLS:      !account.smtp.secure,
+    requireTLS:      !smtp.secure,
     auth:            {
-      user: account.smtp.user ?? account.imap.user,
+      user: smtp.user ?? account.imap.user,
       pass: password,
     },
     connectionTimeout: SMTP_TIMEOUT_MS,
@@ -81,6 +81,16 @@ async function getTransporter(account: Account): Promise<Transporter> {
  * without first having been written somewhere the user can read it. See `security.md` §3.
  */
 export async function sendDraft(account: Account, draftUid: number): Promise<SendResult> {
+  // ---- Validation
+  // Checked before anything is read: an account without SMTP sends nothing, by configuration.
+  const { smtp } = account;
+
+  if (smtp === undefined) {
+    throw new MailbridgeError('send_rejected', `"${account.id}" has no SMTP configured: it prepares drafts and sends nothing.`, {
+      remediation: `Draft ${draftUid} is untouched in Drafts: the user sends it from their mail client.`,
+    });
+  }
+
   // ---- Load draft
   const draftsFolder = await resolveSpecialFolder(account, 'drafts');
   const draft = await getMessage(account, draftsFolder, draftUid);
@@ -106,7 +116,7 @@ export async function sendDraft(account: Account, draftUid: number): Promise<Sen
   }
 
   // ---- Send
-  const transporter = await getTransporter(account);
+  const transporter = await getTransporter(account, smtp);
 
   let messageId: string | undefined;
 
@@ -121,7 +131,7 @@ export async function sendDraft(account: Account, draftUid: number): Promise<Sen
 
     messageId = info.messageId;
   } catch (cause) {
-    throw new MailbridgeError('smtp_send_failed', `Sending through ${account.smtp.host} failed.`, {
+    throw new MailbridgeError('smtp_send_failed', `Sending through ${smtp.host} failed.`, {
       remediation: 'The draft is untouched on the server: fix the problem and try sending it again.',
       cause,
     });

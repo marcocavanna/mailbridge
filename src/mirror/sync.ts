@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
+import { startImapProxy } from './imap-proxy.js';
 import { withSyncLock } from './lock.js';
 import { listMirroredChannels, writeMbsyncrc } from './mbsyncrc.js';
 import { resolveMailRoot, resolveMaildirPath } from './paths.js';
@@ -10,10 +11,12 @@ import { assertMirrorTools } from './prerequisites.js';
 import { recordSync } from './state.js';
 
 import { resolveConfigPath } from '#config/load-accounts';
-import { MailbridgeError } from '#shared/errors';
+import { getAccessToken } from '#oauth/access-token';
+import { MailbridgeError, describeUnknownError } from '#shared/errors';
 import { logger } from '#shared/logger';
 
-import type { AccountsConfig } from '#config/accounts.schema';
+import type { ImapProxy } from './imap-proxy.js';
+import type { Account, AccountsConfig } from '#config/accounts.schema';
 
 /* --------
  * Constants
@@ -70,6 +73,18 @@ export type SyncProgressEvent =
 
 function resolveNotmuchConfigPath(): string {
   return join(dirname(resolveConfigPath()), 'notmuch-config');
+}
+
+/**
+ * mbsync warns on every run that the password travels in the clear. Towards the loopback proxy that is
+ * the design (see `imap-proxy.ts`), and a line repeated on every sync would bury the ones that matter.
+ * Only that exact warning is dropped.
+ */
+function withoutLoopbackWarning(output: string): string {
+  return output
+    .split('\n')
+    .filter((line) => !line.includes('*** IMAP Warning *** Password is being sent in the clear'))
+    .join('\n');
 }
 
 function tail(output: string, lines: number): string | undefined {
@@ -133,7 +148,6 @@ async function runSyncLocked(config: AccountsConfig, options: RunSyncOptions): P
   await assertMirrorTools();
 
   // ---- Prepare
-  const mbsyncrcPath = await writeMbsyncrc(config);
   const mirrored = listMirroredChannels(config);
 
   if (mirrored.length === 0) {
@@ -165,19 +179,60 @@ async function runSyncLocked(config: AccountsConfig, options: RunSyncOptions): P
     await mkdir(resolveMaildirPath(account), { recursive: true });
   }
 
-  // ---- Sync, one channel at a time so a broken account does not stop the others
+  // ---- Loopback proxies for the OAuth accounts of this run, closed whatever happens
+  const proxies = new Map<string, ImapProxy>();
   const runs: SyncRunResult[] = [];
 
-  for (const [position, channel] of channels.entries()) {
-    onProgress?.({ kind: 'account-start', accountId: channel, position: position + 1, total: channels.length });
+  try {
+    for (const account of selected) {
+      if (account.auth.type === 'oauth2') {
+        proxies.set(account.id, await startImapProxy({ account, getAccessToken: async () => getAccessToken(account) }));
+      }
+    }
+
+    const endpoints = new Map([...proxies].map(([accountId, proxy]) => [accountId, proxy.endpoint] as const));
+    const mbsyncrcPath = await writeMbsyncrc(config, endpoints);
+
+    await syncChannels(selected, mbsyncrcPath, runs, onProgress);
+  } finally {
+    await Promise.allSettled([...proxies.values()].map(async (proxy) => proxy.close()));
+
+    // The one-time passwords are dead with their proxies; the file is rewritten without them anyway.
+    if (proxies.size > 0) {
+      await writeMbsyncrc(config).catch(() => undefined);
+    }
+  }
+
+  return indexAndSummarize(channels.length, runs, onProgress);
+}
+
+/**
+ * Runs mbsync one channel at a time, so a broken account does not stop the others.
+ */
+async function syncChannels(
+  accounts: readonly Account[],
+  mbsyncrcPath: string,
+  runs: SyncRunResult[],
+  onProgress: RunSyncOptions['onProgress'],
+): Promise<void> {
+  for (const [position, account] of accounts.entries()) {
+    const channel = account.id;
+
+    onProgress?.({ kind: 'account-start', accountId: channel, position: position + 1, total: accounts.length });
 
     try {
+      // An OAuth account checks its token before mbsync starts: a revoked sign-in then reads as what it
+      // is, with the command that fixes it, instead of as a login refused by the proxy.
+      if (account.auth.type === 'oauth2') {
+        await getAccessToken(account);
+      }
+
       const { stdout, stderr } = await execFileAsync('mbsync', ['-c', mbsyncrcPath, channel], {
         timeout:   SYNC_TIMEOUT_MS,
         maxBuffer: MAX_OUTPUT_BYTES,
       });
 
-      runs.push({ accountId: channel, ok: true, detail: tail(`${stdout}\n${stderr}`, 5) });
+      runs.push({ accountId: channel, ok: true, detail: tail(withoutLoopbackWarning(`${stdout}\n${stderr}`), 5) });
       onProgress?.({ kind: 'account-done', accountId: channel, ok: true });
 
       await recordSync(channel, {
@@ -186,7 +241,7 @@ async function runSyncLocked(config: AccountsConfig, options: RunSyncOptions): P
         indexedMessages: undefined,
       });
     } catch (cause) {
-      const detail = cause instanceof Error ? tail(cause.message, 5) : String(cause);
+      const detail = tail(withoutLoopbackWarning(describeUnknownError(cause)), 5);
 
       logger.warn('account sync failed', { accountId: channel, detail });
 
@@ -200,7 +255,13 @@ async function runSyncLocked(config: AccountsConfig, options: RunSyncOptions): P
       });
     }
   }
+}
 
+async function indexAndSummarize(
+  channelCount: number,
+  runs: SyncRunResult[],
+  onProgress: RunSyncOptions['onProgress'],
+): Promise<SyncSummary> {
   // ---- Index
   onProgress?.({ kind: 'index-start' });
 
@@ -232,7 +293,7 @@ async function runSyncLocked(config: AccountsConfig, options: RunSyncOptions): P
 
   onProgress?.({ kind: 'index-done', indexedMessages });
 
-  logger.info('sync completed', { channels: channels.length, indexedMessages });
+  logger.info('sync completed', { channels: channelCount, indexedMessages });
 
   return { runs, indexedMessages, mailRoot: resolveMailRoot() };
 }

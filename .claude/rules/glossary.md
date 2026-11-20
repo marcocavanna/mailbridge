@@ -5,7 +5,11 @@ anchored **gets reported and written here**, never guessed.
 
 | Domain term | Entity in code | Note |
 |---|---|---|
-| account | `Account` | An IMAP+SMTP pair with its credentials. `accountId` is the slug chosen at setup |
+| account | `Account` | An IMAP server, optionally SMTP, with its credentials. `accountId` is the slug chosen at setup. Without `smtp` it prepares drafts and sends nothing |
+| sign-in method | `AccountAuth` | `password` (Keychain item `mailbridge:<id>`) or `oauth2` (refresh token in `mailbridge:<id>:oauth`) |
+| OAuth sign-in | `signIn` | Authorization code with PKCE in the browser, redirect to a loopback listener. Run once, and again after a revoked session |
+| access token | `TokenSet` | Short-lived, in memory only. Renewed from the refresh token by `getAccessToken` |
+| refresh token | — | The only persisted OAuth credential. Rotated by Microsoft on every use, and stored again each time |
 | folder | `Folder` | Full IMAP path, with the server's delimiter. Not "label" |
 | special folder | `SpecialFolder` | `inbox` \| `sent` \| `drafts` \| `archive` \| `trash` \| `junk` — a union of literals, not an enum |
 | message | `Message` | Our own model, already parsed. Not imapflow's raw object |

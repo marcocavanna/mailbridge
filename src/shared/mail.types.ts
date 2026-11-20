@@ -12,6 +12,8 @@ export interface Folder {
   /** Special role, when the server announces it or the configuration declares it. */
   specialUse: SpecialFolder | undefined;
   subscribed: boolean;
+  /** `false` for `\Noselect` and `\NonExistent` entries: hierarchy nodes that hold no messages. */
+  isSelectable: boolean;
 }
 
 /* --------

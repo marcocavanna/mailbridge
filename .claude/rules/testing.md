@@ -45,6 +45,28 @@ Vitest. Test what earns its place; do not pad for coverage.
   would make the agent fail silently (the homebrew PATH, `--quiet`, the log level). The generated plist is
   also validated with `plutil -lint`, which is the real judge.
 
+- **OAuth**: the PKCE challenge against the RFC 7636 example; the authorization URL (tenant, scopes,
+  and the absence of anything that sends); the token requests carrying no client secret; the mapping of
+  token endpoint errors to "sign in again" or "an administrator must consent", on the description shape
+  measured against the real endpoint; the refresh token rotation being stored; one refresh shared by
+  concurrent callers; tokens registered for redaction; and the sign-in round trip through a **real**
+  loopback listener, with the browser and the token endpoint replaced, including a forged `state`
+  refused before any code is redeemed and the port released afterwards.
+- **Engine choice per account**: an account without a mirror does not take the index away from the
+  others (`mixed`); a never synced mirror, or one lacking the folder, goes to the server alone; the
+  notmuch query is scoped to the mirrored accounts, never the whole database (verified against notmuch);
+  and an IMAP search without a folder visits every selectable folder, reports a failing one without
+  sinking the others, and keeps the limit across folders.
+- **The schema boundary for OAuth**: SMTP refused on an OAuth account, multi-tenant aliases refused, and
+  `password` as the default so older configurations keep their meaning.
+- **The mirror proxy**, against a fake Exchange on loopback: no `LOGINDISABLED` and no `AUTH=` before
+  login; a wrong password or another user refused without asking for a token; the XOAUTH2 response in
+  the documented shape; the server's capabilities handed to mbsync; bytes piped after login; an upstream
+  refusal turned into `NO` with the reason. The generated `mbsyncrc` points an OAuth account at the proxy
+  and never at the real server, and refuses one without a running proxy.
+- **A half-filled mirror stays out of the index**: a mirror whose only runs failed is searched on the
+  server, and the last success survives a later failure. Older state files are read by their outcome.
+
 ## What does not get tested
 
 No test against a real IMAP server in the suite. Connections are mocked at the pool boundary. A test that

@@ -10,11 +10,13 @@ export type MailbridgeErrorCode =
   | 'config_invalid'
   | 'config_missing'
   | 'credential_missing'
+  | 'credential_rejected'
   | 'folder_not_found'
   | 'imap_connection_failed'
   | 'imap_operation_failed'
   | 'message_not_found'
   | 'mirror_unavailable'
+  | 'oauth_failed'
   | 'search_failed'
   | 'send_rejected'
   | 'smtp_send_failed';

@@ -26,12 +26,13 @@ export interface SearchCriteria {
   limit: number;
 }
 
-export type SearchEngine = 'notmuch' | 'imap';
+/** `mixed`: the index for the accounts that have a mirror, the server for the others. */
+export type SearchEngine = 'notmuch' | 'imap' | 'mixed';
 
 export interface SearchDiagnostics {
   engine: SearchEngine;
   /** The query actually executed: it tells the user why a result is missing. */
   query: string;
-  /** Why notmuch was not used, when IMAP was. */
+  /** Why notmuch was not used, per account, for the accounts searched over IMAP. */
   fallbackReason?: string | undefined;
 }

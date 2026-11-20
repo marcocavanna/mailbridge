@@ -134,6 +134,30 @@ describe('configuration safety', () => {
     const raw = await readFile(process.env['MAILBRIDGE_CONFIG'] ?? '', 'utf8');
 
     expect(raw).not.toContain('should-not-get-through');
-    expect(raw).not.toMatch(/password/i);
+    // `"type": "password"` names the method and is expected; a `password` key would carry a value.
+    expect(raw).not.toMatch(/"password"\s*:/i);
+  });
+
+  it('never writes an OAuth token to the file, not even one smuggled into the auth block', async () => {
+    const account = {
+      ...buildAccount('one'),
+      auth: {
+        type:         'oauth2',
+        provider:     'microsoft',
+        tenantId:     '11111111-2222-3333-4444-555555555555',
+        clientId:     'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        refreshToken: 'smuggled-refresh-token',
+      },
+      accessToken: 'smuggled-access-token',
+      smtp:        undefined,
+      mirror:      { enabled: false },
+    } as unknown as Account;
+
+    await addAccount(account);
+
+    const raw = await readFile(process.env['MAILBRIDGE_CONFIG'] ?? '', 'utf8');
+
+    expect(raw).toContain('"oauth2"');
+    expect(raw).not.toMatch(/smuggled|token/i);
   });
 });

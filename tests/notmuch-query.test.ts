@@ -57,6 +57,13 @@ describe('buildNotmuchQuery', () => {
     expect(query).not.toContain('folder:');
   });
 
+  it('scopes a search with no folder to the accounts in scope, never the whole database', () => {
+    // An account searched over IMAP can leave its old mirror indexed: it must not answer here.
+    // Verified against notmuch on 2026-11-20: the count equals the sum of the two accounts.
+    expect(buildNotmuchQuery({ text: 'invoice', limit: 20 }, { accountIds: ['one', 'two'] }))
+      .toBe('(path:"one/**" or path:"two/**") and invoice');
+  });
+
   it('qualifies the folder with the account, because folder: is relative to the database root', () => {
     const query = buildNotmuchQuery(
       { accountId: 'work', folder: 'INBOX.Sent', limit: 10 },

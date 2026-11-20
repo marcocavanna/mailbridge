@@ -1,7 +1,8 @@
 import { ImapFlow } from 'imapflow';
 import { createTransport } from 'nodemailer';
 
-import { getImapPassword, getSmtpPassword, hasCredentials } from '#secrets/keychain';
+import { resolveImapAuth } from '#secrets/imap-auth';
+import { getSmtpPassword, hasCredentials, missingCredentialRemediation } from '#secrets/keychain';
 import { describeUnknownError } from '#shared/errors';
 import { logger } from '#shared/logger';
 
@@ -53,13 +54,11 @@ async function probeImap(account: Account): Promise<{ probe: ProbeResult; folder
   let client: ImapFlow | undefined;
 
   try {
-    const password = await getImapPassword(account);
-
     client = new ImapFlow({
       host:   account.imap.host,
       port:   account.imap.port,
       secure: account.imap.secure,
-      auth:   { user: account.imap.user, pass: password },
+      auth:   await resolveImapAuth(account),
       connectionTimeout: PROBE_TIMEOUT_MS,
       greetingTimeout:   PROBE_TIMEOUT_MS,
       socketTimeout:     PROBE_TIMEOUT_MS,
@@ -94,15 +93,22 @@ async function probeImap(account: Account): Promise<{ probe: ProbeResult; folder
  * sending anything.
  */
 async function probeSmtp(account: Account): Promise<ProbeResult> {
+  // ---- Validation
+  const { smtp } = account;
+
+  if (smtp === undefined) {
+    return skipped('no SMTP configured: this account prepares drafts and sends nothing');
+  }
+
   const startedAt = Date.now();
 
   const transporter = createTransport({
-    host:   account.smtp.host,
-    port:   account.smtp.port,
-    secure: account.smtp.secure,
-    requireTLS: !account.smtp.secure,
+    host:   smtp.host,
+    port:   smtp.port,
+    secure: smtp.secure,
+    requireTLS: !smtp.secure,
     auth:   {
-      user: account.smtp.user ?? account.imap.user,
+      user: smtp.user ?? account.imap.user,
       pass: await getSmtpPassword(account),
     },
     connectionTimeout: PROBE_TIMEOUT_MS,
@@ -133,7 +139,7 @@ export async function checkAccountHealth(account: Account): Promise<AccountHealt
   const hasCredential = await hasCredentials(account);
 
   if (!hasCredential) {
-    const reason = 'credential missing from the Keychain';
+    const reason = `credential missing from the Keychain. ${missingCredentialRemediation(account)}`;
 
     return {
       accountId:   account.id,

@@ -37,7 +37,8 @@ const NAME_FALLBACK: Record<SpecialFolder, string[]> = {
   archive: ['archive', 'all mail', 'archivio', 'archives', 'archiv', 'archivados'],
   trash: [
     'trash', 'deleted items',
-    'cestino', 'eliminata',
+    // `posta eliminata` is the Italian name Exchange Online gives Deleted Items.
+    'cestino', 'posta eliminata', 'eliminata',
     'corbeille', 'gelöscht', 'papelera',
   ],
   junk: [
@@ -85,7 +86,8 @@ export async function listFolders(account: Account): Promise<Folder[]> {
         name,
         delimiter,
         specialUse,
-        subscribed: entry.subscribed === true,
+        subscribed:   entry.subscribed === true,
+        isSelectable: !entry.flags.has('\\Noselect') && !entry.flags.has('\\NonExistent'),
       };
     });
   });

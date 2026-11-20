@@ -7,6 +7,7 @@ import {
 } from './schedule-actions.js';
 import { listAccounts, showStatus, testAccount } from './account-read-actions.js';
 import { addAccountFlow, editAccountFlow, removeAccountFlow } from './account-write-actions.js';
+import { loginAccount } from './account-auth-actions.js';
 import { prompts, required } from './prompt-helpers.js';
 import { renderIntro } from './shell.js';
 import { startUpdateCheck } from './update-check.js';
@@ -25,6 +26,7 @@ async function accountMenu(): Promise<void> {
       { value: 'test', label: 'Test the connection', hint: 'IMAP and SMTP, sending nothing' },
       { value: 'add', label: 'Add' },
       { value: 'edit', label: 'Edit', hint: 'fields, password or mirror' },
+      { value: 'login', label: 'Sign in (OAuth)', hint: 'Microsoft 365 accounts, in the browser' },
       { value: 'remove', label: 'Remove' },
     ],
   }));
@@ -44,6 +46,9 @@ async function accountMenu(): Promise<void> {
       break;
     case 'edit':
       await editAccountFlow();
+      break;
+    case 'login':
+      await loginAccount();
       break;
     case 'remove':
       await removeAccountFlow();

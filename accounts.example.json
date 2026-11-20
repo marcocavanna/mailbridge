@@ -23,6 +23,27 @@
       "mirror": {
         "enabled": true
       }
+    },
+    {
+      "id": "office",
+      "label": "Your Name",
+      "address": "you@contoso.com",
+      "auth": {
+        "type": "oauth2",
+        "provider": "microsoft",
+        "tenantId": "00000000-0000-0000-0000-000000000000",
+        "clientId": "00000000-0000-0000-0000-000000000000"
+      },
+      "imap": {
+        "host": "outlook.office365.com",
+        "port": 993,
+        "secure": true,
+        "user": "you@contoso.com"
+      },
+      "folders": {},
+      "mirror": {
+        "enabled": false
+      }
     }
   ]
 }

@@ -178,7 +178,12 @@ export async function getThread(account: Account, folder: string, uid: number): 
   const normalized = normalizeSubject(anchor.subject);
 
   // ---- Folders in scope
-  const fromIndex = await toImapFolders(account, await findThreadFolders(account.id, [...chain]));
+  // Only an account with the mirror enabled has an index of *its* server. A disabled mirror can leave
+  // files behind, and for an account moved to another server they describe a mailbox that no longer
+  // exists: the answer would depend on leftovers rather than on the configuration.
+  const fromIndex = account.mirror.enabled
+    ? await toImapFolders(account, await findThreadFolders(account.id, [...chain]))
+    : [];
   const scope = [folder, ...fromIndex.filter((entry) => entry !== folder)].slice(0, MAX_THREAD_FOLDERS);
 
   // ---- Collect

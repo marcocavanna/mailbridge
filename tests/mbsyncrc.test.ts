@@ -65,3 +65,48 @@ describe('imap.authMechs schema', () => {
     expect(() => makeAccount({ authMechs: value })).toThrow();
   });
 });
+
+/* --------
+ * OAuth accounts
+ * -------- */
+
+describe('OAuth account block', () => {
+  const oauthAccount = accountSchema.parse({
+    id:      'office',
+    label:   'Office',
+    address: 'you@example.com',
+    auth:    {
+      type:     'oauth2',
+      provider: 'microsoft',
+      tenantId: '11111111-2222-3333-4444-555555555555',
+      clientId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    },
+    imap: { host: 'outlook.office365.com', user: 'you@example.com' },
+  });
+
+  const endpoint = { host: '127.0.0.1', port: 54321, password: 'one-time-password' };
+
+  it('points mbsync at the loopback proxy, with IMAP LOGIN and the one-time password', () => {
+    const block = buildAccountBlock(oauthAccount, endpoint);
+
+    expect(block).toContain('Host 127.0.0.1\nPort 54321\nUser you@example.com\nPass one-time-password\nAuthMechs LOGIN\nTLSType None');
+  });
+
+  it('never names the real server or the Keychain in a proxied block', () => {
+    const block = buildAccountBlock(oauthAccount, endpoint);
+
+    expect(block).not.toContain('outlook.office365.com');
+    expect(block).not.toContain('PassCmd');
+  });
+
+  it('refuses to write an OAuth account without a running proxy', () => {
+    expect(() => buildAccountBlock(oauthAccount)).toThrow(/needs the loopback proxy/);
+  });
+
+  it('keeps a password account on the real server with TLS', () => {
+    const block = buildAccountBlock(makeAccount());
+
+    expect(block).toContain('Host imap.example.com');
+    expect(block).toContain('TLSType IMAPS');
+  });
+});

@@ -14,6 +14,7 @@ import {
 } from './schedule-actions.js';
 import { listAccounts, showStatus, testAccount } from './account-read-actions.js';
 import { addAccountFlow, editAccountFlow, removeAccountFlow } from './account-write-actions.js';
+import { loginAccount, printAccessToken, requireAccountById } from './account-auth-actions.js';
 import { runSyncQuiet, runSyncWithFeedback, showSyncState, syncFlow } from './sync-actions.js';
 import { colors } from './ui.js';
 
@@ -48,6 +49,27 @@ function buildProgram(): Command {
     .action(async (accountId?: string) => framed(async () => testAccount(accountId))());
 
   account.command('add').description('Add an account').action(framed(addAccountFlow));
+
+  account
+    .command('login [accountId]')
+    .description('Sign an OAuth account in, in the browser (first time, or after a revoked session)')
+    .action(async (accountId?: string) => framed(async () => loginAccount(accountId))());
+
+  account
+    .command('token <accountId>')
+    .description('Print a fresh OAuth access token on stdout, for tools that speak IMAP themselves')
+    .action(async (accountId: string) => {
+      /**
+       * Not `framed`: stdout carries the token and nothing else, so a caller can read it as is. A
+       * failure goes to stderr with a non-zero exit, never to stdout where it would pass for a token.
+       */
+      try {
+        await printAccessToken(await requireAccountById(accountId));
+      } catch (cause) {
+        process.stderr.write(`mailbridge: ${describeUnknownError(cause)}\n`);
+        process.exitCode = 1;
+      }
+    });
 
   account
     .command('edit [accountId]')

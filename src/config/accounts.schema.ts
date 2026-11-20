@@ -73,15 +73,71 @@ const mirrorSchema = z.object({
   maildirPath: z.string().min(1).optional(),
 });
 
-export const accountSchema = z.object({
-  id:      accountIdSchema,
-  label:   z.string().min(1).max(120),
-  address: z.email(),
-  imap:    imapSchema,
-  smtp:    smtpSchema,
-  folders: foldersSchema.default({}),
-  mirror:  mirrorSchema.default({ enabled: true }),
+/**
+ * How the account authenticates.
+ *
+ * - `password`: the password lives in the Keychain under `mailbridge:<id>`. The default, so a
+ *   configuration written before OAuth existed keeps its meaning.
+ * - `oauth2`: SASL XOAUTH2 with a token from the provider. Only the refresh token is persisted, in the
+ *   Keychain under `mailbridge:<id>:oauth`; access tokens live in memory. `tenantId` and `clientId`
+ *   identify a **public** client registered by the account owner: neither is a secret, and no client
+ *   secret exists. Nothing in the code names a tenant or an application.
+ */
+const passwordAuthSchema = z.object({
+  type: z.literal('password'),
 });
+
+const oauth2AuthSchema = z.object({
+  type:     z.literal('oauth2'),
+  provider: z.literal('microsoft'),
+  /**
+   * Directory (tenant) id, or one of the tenant's domain names. The multi-tenant aliases (`common`,
+   * `organizations`, `consumers`) are refused: the client is registered in a single tenant.
+   */
+  tenantId: z
+    .string()
+    .regex(
+      /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z0-9-]+(\.[a-z0-9-]+)+)$/i,
+      'use the directory (tenant) id or a domain of the tenant',
+    ),
+  /** Application (client) id of the app registration. */
+  clientId: z.guid(),
+});
+
+export const authSchema = z.discriminatedUnion('type', [passwordAuthSchema, oauth2AuthSchema]);
+
+export const accountSchema = z
+  .object({
+    id:      accountIdSchema,
+    label:   z.string().min(1).max(120),
+    address: z.email(),
+    auth:    authSchema.default({ type: 'password' }),
+    imap:    imapSchema,
+    /**
+     * Absent = the account reads and prepares drafts, and sends nothing: the user sends from their mail
+     * client. That is a configuration, not a degraded state.
+     */
+    smtp:    smtpSchema.optional(),
+    folders: foldersSchema.default({}),
+    mirror:  mirrorSchema.default({ enabled: true }),
+  })
+  .superRefine((account, context) => {
+    if (account.auth.type !== 'oauth2') {
+      return;
+    }
+
+    /*
+     * Sending with OAuth would need the SMTP.Send scope and SMTP AUTH enabled on the mailbox. Not
+     * supported: an OAuth account prepares drafts, and the user sends them from the mail client.
+     */
+    if (account.smtp !== undefined) {
+      context.addIssue({
+        code:    'custom',
+        path:    ['smtp'],
+        message: 'sending is not supported on OAuth accounts: remove smtp and send drafts from the mail client',
+      });
+    }
+  });
 
 export const accountsConfigSchema = z.object({
   version: z.literal(1),
@@ -100,5 +156,7 @@ export const accountsConfigSchema = z.object({
 export type SpecialFolder = z.infer<typeof specialFolderSchema>;
 export type ImapConfig = z.infer<typeof imapSchema>;
 export type SmtpConfig = z.infer<typeof smtpSchema>;
+export type AccountAuth = z.infer<typeof authSchema>;
+export type OAuth2Auth = z.infer<typeof oauth2AuthSchema>;
 export type Account = z.infer<typeof accountSchema>;
 export type AccountsConfig = z.infer<typeof accountsConfigSchema>;

@@ -25,6 +25,36 @@ Binding consequences:
 - No tool exposes the password: there is no `get_account_credentials`. If something needs diagnosing,
   check *whether* the item exists, not *what* it contains.
 
+### OAuth accounts
+
+An account with `auth.type: oauth2` has no password. What it has instead follows the same rules:
+
+- The **refresh token** lives only in the Keychain, under `mailbridge:<accountId>:oauth`, a separate
+  item so that moving an account to OAuth never overwrites the password it had. It is never written to
+  `accounts.json`, to a cache file, or to a log.
+- **Access tokens** live in memory only, per process, and are renewed five minutes before expiry.
+- `tenantId` and `clientId` sit in `accounts.json` because they are **not secrets**: the app is a public
+  client, and there is no client secret anywhere. The code names no tenant and no application: each
+  owner registers their own.
+- `storeRefreshToken` is the one function that takes a credential as a parameter, because the token is
+  produced by this process and no human can type it. It registers the value as a secret before anything
+  else, and it hands the command to `security -i` on **stdin**, hex encoded through `-X`: the token never
+  appears on a command line, where `ps` would show it. The user name, the only other free value on that
+  line, is refused if it contains whitespace or quotes.
+- `-T` is passed **only when the item is created**. On an existing item it is a change of the access
+  list, and macOS asks for the login password to allow it: the first version did this on every token
+  rotation, three dialogs in one afternoon, and the unattended path would have hung on it. Every write
+  is also bounded at 15 seconds, so a dialog that does appear becomes an error instead of a stuck tool.
+- The sign-in is authorization code with **PKCE**, in the system browser, redirect on a listener bound to
+  the loopback interface. The `state` is checked before the code is used: any local process can reach an
+  open port, only the browser that went through our request knows the value.
+- **The token cannot send.** The scopes are `IMAP.AccessAsUser.All` and `offline_access`; `SMTP.Send` is
+  not requested, and the schema refuses `smtp` on an OAuth account. Rule 3 below is then enforced by the
+  provider as well as by the code.
+- `mailbridge account token <id>` prints an access token on stdout for scripts that speak IMAP
+  themselves. It exposes nothing a local process could not already read from the Keychain item through
+  `security`, and for an hour rather than indefinitely.
+
 ## 2. Incoming mail is untrusted input
 
 Every message is written by a third party who may be hostile. Its content — body, subject, sender name,
@@ -118,7 +148,22 @@ cache: it is never the source of truth and holds nothing the server cannot retur
 
 ## 6. Network
 
-TLS is mandatory: IMAPS on 993 and SMTP submission on 465 (implicit) or 587 with STARTTLS. No plaintext
+TLS is mandatory: IMAPS on 993 and SMTP submission on 465 (implicit) or 587 with STARTTLS. The OAuth
+endpoints are HTTPS on `login.microsoftonline.com`. Two exceptions, both on the loopback interface and
+both never leaving the machine:
+
+- the OAuth redirect, plain HTTP on `localhost`, checked against a one-time `state`;
+- the **mirror proxy** for OAuth accounts (`src/mirror/imap-proxy.ts`), plain IMAP between mbsync and
+  `127.0.0.1`. It is the only way to give mbsync an XOAUTH2 login on macOS, whose `libsasl2` has no such
+  plugin. It is bounded on every side: it listens on `127.0.0.1` only and only while a sync runs; the
+  password is 32 random bytes, generated per run, compared in constant time, accepted together with the
+  account's own user name only, and one attempt per connection; it is written to `mbsyncrc` (mode
+  `0600`) for that run and the file is rewritten without it when the run ends; before login the proxy
+  answers nothing but `CAPABILITY`, `NOOP`, `ID`, `LOGOUT` and `LOGIN`. Reading loopback traffic takes
+  root, which reads the Keychain anyway. mbsync's "password is being sent in the clear" warning is
+  filtered from the sync output, that exact line and nothing else.
+
+No plaintext
 fallback, and no disabling certificate verification — a `rejectUnauthorized: false` in this repository is
 a bug, not a shortcut. If a server has a broken certificate, that is a deliberate decision and has to be
 written down with the reason.

@@ -7,7 +7,7 @@ import { extractAttachmentText } from '#content/attachment-text';
 import { listFolders, resolveSpecialFolder } from '#imap/folders';
 import { getAttachment, getMessage, listMessages } from '#imap/messages';
 import { getThread } from '#imap/threads';
-import { hasCredentials } from '#secrets/keychain';
+import { hasCredentials, missingCredentialRemediation } from '#secrets/keychain';
 import { executeSearch } from '#search/execute';
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -57,8 +57,11 @@ export function registerReadTools(server: McpServer): void {
 
         return [
           `${account.id} — ${account.label} <${account.address}>`,
-          `  imap: ${account.imap.host}:${account.imap.port} · smtp: ${account.smtp.host}:${account.smtp.port}`,
-          `  keychain credential: ${ready ? 'present' : 'MISSING — run `mailbridge account edit`'}`,
+          `  imap: ${account.imap.host}:${account.imap.port} · ${account.smtp === undefined
+            ? 'smtp: none (drafts only, the user sends from their mail client)'
+            : `smtp: ${account.smtp.host}:${account.smtp.port}`}`,
+          `  auth: ${account.auth.type === 'oauth2' ? 'OAuth (Microsoft)' : 'password'}`,
+          `  keychain credential: ${ready ? 'present' : `MISSING — ${missingCredentialRemediation(account)}`}`,
           `  local mirror: ${account.mirror.enabled ? 'enabled' : 'disabled'}`,
         ].join('\n');
       }));
@@ -129,8 +132,8 @@ export function registerReadTools(server: McpServer): void {
       title:       'Search messages',
       description: [
         'Searches messages by sender, recipient, subject, free text, date and state.',
-        'Uses the local index when available — much faster, and it searches message bodies too — and falls back to IMAP when the mirror is missing or stale.',
-        'The result always states which engine was used.',
+        'Uses the local index for accounts that have one — much faster, and it searches message bodies too — and the server, across every folder, for accounts that do not.',
+        'The result always states which engine answered for which account.',
       ].join(' '),
       inputSchema: {
         accountId:     accountIdShape.optional().describe('Restrict to one account. Absent = all.'),
@@ -175,7 +178,7 @@ export function registerReadTools(server: McpServer): void {
         `${outcome.hits.length} results · engine: ${outcome.diagnostics.engine}`,
         outcome.diagnostics.fallbackReason === undefined
           ? undefined
-          : `  reason for the IMAP fallback: ${outcome.diagnostics.fallbackReason}`,
+          : `  searched over IMAP: ${outcome.diagnostics.fallbackReason}`,
         `  query: ${outcome.diagnostics.query}`,
         ...outcome.warnings.map((warning) => `  ⚠ ${warning}`),
       ]

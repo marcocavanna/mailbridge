@@ -23,7 +23,10 @@ const execFileAsync = promisify(execFile);
  * Types
  * -------- */
 
-export type CredentialKind = 'imap' | 'smtp';
+/**
+ * `oauth` holds a refresh token, never a password: see `.claude/rules/security.md` §1.
+ */
+export type CredentialKind = 'imap' | 'smtp' | 'oauth';
 
 /* --------
  * Helpers
@@ -31,10 +34,11 @@ export type CredentialKind = 'imap' | 'smtp';
 
 /**
  * Service name of the Keychain item. `smtp` gets a separate item only when needed: when it is
- * missing we fall back to the IMAP one, which is the normal case.
+ * missing we fall back to the IMAP one, which is the normal case. `oauth` is its own item, so an
+ * account moved to OAuth never overwrites the password it used before.
  */
 export function buildServiceName(accountId: string, kind: CredentialKind): string {
-  return kind === 'imap' ? `${SERVICE_PREFIX}:${accountId}` : `${SERVICE_PREFIX}:${accountId}:smtp`;
+  return kind === 'imap' ? `${SERVICE_PREFIX}:${accountId}` : `${SERVICE_PREFIX}:${accountId}:${kind}`;
 }
 
 /* --------
@@ -47,7 +51,7 @@ export function buildServiceName(accountId: string, kind: CredentialKind): strin
  *
  * `execFile` without a shell: `accountId` and `user` are never interpolated into a command line.
  */
-async function readPassword(service: string, user: string): Promise<string | undefined> {
+async function readKeychainItem(service: string, user: string): Promise<string | undefined> {
   try {
     const { stdout } = await execFileAsync(
       SECURITY_BIN,
@@ -75,11 +79,11 @@ async function readPassword(service: string, user: string): Promise<string | und
  */
 export async function getImapPassword(account: Account): Promise<string> {
   const service = buildServiceName(account.id, 'imap');
-  const password = await readPassword(service, account.imap.user);
+  const password = await readKeychainItem(service, account.imap.user);
 
   if (password === undefined) {
     throw new MailbridgeError('credential_missing', `No IMAP credential in the Keychain for "${account.id}".`, {
-      remediation: `Run \`mailbridge account edit ${account.id}\` and set the password.`,
+      remediation: missingCredentialRemediation(account),
     });
   }
 
@@ -93,8 +97,8 @@ export async function getImapPassword(account: Account): Promise<string> {
  * same password for both.
  */
 export async function getSmtpPassword(account: Account): Promise<string> {
-  const user = account.smtp.user ?? account.imap.user;
-  const dedicated = await readPassword(buildServiceName(account.id, 'smtp'), user);
+  const user = account.smtp?.user ?? account.imap.user;
+  const dedicated = await readKeychainItem(buildServiceName(account.id, 'smtp'), user);
 
   if (dedicated !== undefined) {
     logger.debug('dedicated SMTP credential read from the Keychain', { accountId: account.id });
@@ -106,11 +110,29 @@ export async function getSmtpPassword(account: Account): Promise<string> {
 }
 
 /**
+ * The stored OAuth refresh token, or `undefined` when the account has never signed in.
+ */
+export async function readRefreshToken(account: Account): Promise<string | undefined> {
+  return readKeychainItem(buildServiceName(account.id, 'oauth'), account.imap.user);
+}
+
+/**
  * Checks that the items exist without returning their content. This is the only diagnostic allowed
- * on credentials.
+ * on credentials. Which item depends on how the account authenticates.
  */
 export async function hasCredentials(account: Account): Promise<boolean> {
-  const password = await readPassword(buildServiceName(account.id, 'imap'), account.imap.user);
+  const kind: CredentialKind = account.auth.type === 'oauth2' ? 'oauth' : 'imap';
+  const value = await readKeychainItem(buildServiceName(account.id, kind), account.imap.user);
 
-  return password !== undefined;
+  return value !== undefined;
+}
+
+/**
+ * The remediation for a missing credential, by kind of account. Shared so every path that finds the
+ * credential missing names the same command.
+ */
+export function missingCredentialRemediation(account: Account): string {
+  return account.auth.type === 'oauth2'
+    ? `Run \`mailbridge account login ${account.id}\` to sign in.`
+    : `Run \`mailbridge account edit ${account.id}\` and set the password.`;
 }

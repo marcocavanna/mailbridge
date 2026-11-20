@@ -7,6 +7,7 @@ No third-party service in the data path. No credentials on disk — passwords li
 Keychain. No way to delete mail.
 
 - [Installation](#installation) — one command
+- [Microsoft 365 accounts](#microsoft-365-accounts)
 - [Daily use](#daily-use)
 - [Scheduled sync](#scheduled-sync)
 - [Where the files live](#where-the-files-live)
@@ -79,6 +80,76 @@ pnpm cli -- account add
 ```
 
 Then `pnpm link --global` to get `mailbridge` on your PATH, or use `pnpm cli -- <args>`.
+
+## Microsoft 365 accounts
+
+Exchange Online does not accept a password over IMAP: its server announces `LOGINDISABLED` and
+`AUTH=XOAUTH2` only. A Microsoft 365 mailbox is configured as an **OAuth account**, which signs in once in
+the browser and from then on authenticates with SASL XOAUTH2.
+
+What an OAuth account does differently:
+
+- **It sends nothing.** It reads, searches, organizes and prepares drafts; you send the drafts from your
+  mail client. The token carries `IMAP.AccessAsUser.All` and `offline_access` and no `SMTP.Send`, so it
+  could not send even if something tried. `send_draft` refuses it and says where the draft is.
+- **Its mirror goes through a loopback proxy.** `mbsync` authenticates through the system `libsasl2`,
+  which on macOS has no XOAUTH2 plugin, and Exchange offers nothing else. So during a sync mailbridge
+  opens an IMAP proxy on `127.0.0.1`: mbsync logs in to it with `LOGIN` and a password generated for that
+  run alone, the proxy logs in to Exchange with XOAUTH2 and from then on copies bytes without reading
+  them. The proxy exists only while the sync runs, and the generated `mbsyncrc` is rewritten without the
+  password when it ends. Between mbsync and the proxy the traffic is plain text, on purpose: it never
+  leaves the machine. Toward Exchange it is TLS as always.
+
+### Register the app in your tenant
+
+mailbridge ships no client id: each tenant registers its own public client, and an administrator
+consents to it. In the Microsoft Entra admin center:
+
+1. **App registrations → New registration.** Any name; *Supported account types*: single tenant only.
+   Note the **Application (client) ID** and the **Directory (tenant) ID** on the Overview page.
+2. **Authentication → Add a platform → Mobile and desktop applications**, custom redirect URI
+   `http://localhost`. Entra ignores the port of a localhost redirect, which lets mailbridge listen on
+   any free one. Leave *Allow public client flows* off: it is for the device code flow, which is not
+   used.
+3. **No client secret, no certificate.** A public client must not have one.
+4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions →
+   `IMAP.AccessAsUser.All`** (and `offline_access`, if it is not there already), then **Grant admin
+   consent** for the tenant. The portal lists the delegated IMAP permission under Microsoft Graph, not
+   under Office 365 Exchange Online, even though the token mailbridge requests is for
+   `outlook.office.com`. Without admin consent, a tenant that blocks user consent stops every user at
+   *Need admin approval*.
+5. Optional, to limit the app to named users: **Enterprise apps → the app → Properties → Assignment
+   required: Yes**, then **Users and groups → Add user/group**. Without it, anyone in the tenant can sign
+   in through this client id, to their own mailbox only.
+
+### Configure and sign in
+
+```bash
+mailbridge account add          # choose "Microsoft 365 (OAuth)", paste the two IDs
+mailbridge account login <id>   # again later, after a password change or a revoked session
+```
+
+`account add` ends with the sign-in. The browser opens on Microsoft's page with the address
+pre-filled; the password and any MFA happen there and never pass through mailbridge. The redirect lands
+on a listener bound to the loopback interface, checked against a one-time `state`, and the code is
+redeemed with PKCE.
+
+Only the **refresh token** is kept, in the Keychain under `mailbridge:<id>:oauth`, never on disk. Access
+tokens live in memory for their hour. Microsoft replaces the refresh token on every use and mailbridge
+stores the new one, so the sign-in lasts as long as the account is used at least once every 90 days.
+
+An existing password account moved to OAuth keeps its old Keychain item untouched under
+`mailbridge:<id>`, and its old mirror on disk: both are yours to delete.
+
+### Tools that speak IMAP themselves
+
+```bash
+mailbridge account token <id>
+```
+
+prints a valid access token on stdout and nothing else, for scripts that open their own IMAP connection
+and authenticate with XOAUTH2. Errors go to stderr with a non-zero exit, so whatever a caller reads from
+stdout is a token. It gives a local process what the Keychain item already gives it, for an hour.
 
 ## Daily use
 
@@ -173,6 +244,7 @@ edit <id>` → *The password only*.
 | **Account configuration** | `~/.config/mailbridge/accounts.json` — hosts and usernames, mode `0600`, **never passwords** |
 | **Sync state** | `~/.config/mailbridge/sync-state.json` |
 | **Passwords** | macOS Keychain, service `mailbridge:<id>` — never on disk |
+| **OAuth refresh tokens** | macOS Keychain, service `mailbridge:<id>:oauth`; access tokens only in memory |
 | **Scheduled sync logs** | `~/Library/Logs/mailbridge/sync.log` and `sync.error.log` |
 | **Agent definition** | `~/Library/LaunchAgents/com.marcocavanna.mailbridge.sync.plist` — generated |
 
@@ -209,6 +281,8 @@ interactive prompt.
 | `mailbridge account test <id>` | test credential, IMAP and SMTP — **sends nothing** |
 | `mailbridge account add` | add |
 | `mailbridge account edit <id>` | edit fields, **the password only**, or toggle the mirror |
+| `mailbridge account login <id>` | sign an OAuth account in, in the browser |
+| `mailbridge account token <id>` | print an OAuth access token on stdout, for scripts |
 | `mailbridge account remove <id>` | remove from the configuration |
 
 ### Mirror
@@ -242,14 +316,23 @@ interactive prompt.
 
 ## How search works
 
-Two engines, chosen automatically:
+Two engines, chosen **account by account**:
 
-- **notmuch**, over the local index, when the mirror exists and is recent. Orders of magnitude faster,
-  and it searches **inside message bodies**.
-- **IMAP SEARCH**, live, when the mirror is missing, more than 30 minutes stale, an account does not
-  have one, or the caller explicitly wants fresh data.
+- **notmuch**, over the local index, for every account whose mirror exists and has been synced. Orders
+  of magnitude faster, and it searches **inside message bodies**. A mirror more than 30 minutes old is
+  still used, with a warning in the result.
+- **IMAP SEARCH**, live, for an account without a mirror, one never synced, one whose mirror lacks the
+  requested folder, or every account when the caller explicitly wants fresh data. Without a folder
+  criterion it visits **every folder** of the account, one after the other: IMAP searches inside one
+  selected folder, and the inbox alone would answer for a fraction of the mailbox. On a mailbox of about
+  a hundred folders that takes from a few seconds to about half a minute.
 
-The result **always** states which engine ran, with which query, and why it fell back to IMAP. A
+A search across several accounts can use both at once (engine `mixed`): an account without a mirror
+does not take the index away from the others. The index is always queried for the mirrored accounts in
+scope only, never as a whole: a mirror that was disabled leaves its files indexed, and they are not an
+answer.
+
+The result **always** states which engine ran for which account, with which query and why. A
 search that does not say where its results came from is a search you cannot trust: if something seems
 to be missing, that line tells you whether the problem is a mirror that needs refreshing.
 
@@ -377,6 +460,16 @@ after the last sync: `mailbridge sync <id>`.
 from the Keychain, IMAP refusing, SMTP refusing. If the password changed: `mailbridge account edit
 <id>` → *The password only*.
 
+**"An OAuth account says the sign-in is no longer valid."** A password change or a revoked session
+invalidates the refresh token: `mailbridge account login <id>`. If the message carries `AADSTS65001`,
+nobody has consented to the app yet: an administrator grants consent on the app registration, under
+*API permissions*.
+
+**"The first sync of a large mailbox fails with a timeout."** Each account has 15 minutes per run.
+mbsync keeps what it has already downloaded, so the next run resumes where the last one stopped: run
+`mailbridge sync <id>` again, or let the scheduled sync do it. Until one run completes, searches on
+that account go to the server, because a half-filled mirror would answer for a part of the mailbox.
+
 **"One account's sync fails."** Accounts are synced one at a time: one failure does not stop the
 others, and the summary shows the last lines of `mbsync`'s error output.
 
@@ -416,8 +509,10 @@ local search index.
 
 Other current limitations, stated rather than hidden:
 
-- `get_thread` reassembles a conversation across folders **only when the notmuch index is there** to
-  name them. Without it the search stays inside the anchor's folder, which for a thread whose outgoing
+- Search on an account without a mirror reads every folder in sequence on one connection: complete, but
+  tens of seconds on a large mailbox where the index answers in milliseconds.
+- `get_thread` reassembles a conversation across folders **only on accounts with the mirror enabled**,
+  whose notmuch index names them. Without it the search stays inside the anchor's folder, which for a thread whose outgoing
   half sits in `Sent` returns a monologue by the other party; the result states which folders were
   searched, so a partial view is reported as partial rather than as the whole.
 - A folder criterion on the notmuch engine is resolved against the mirror, whose hierarchy `mbsync`
@@ -427,6 +522,8 @@ Other current limitations, stated rather than hidden:
   that forgets to strip it reveals the hidden recipients to everyone. It has to be done by moving it
   into the SMTP envelope.
 - Outgoing mail is plain text only.
+- OAuth is implemented for Microsoft 365 only, and without sending: see
+  [Microsoft 365 accounts](#microsoft-365-accounts).
 - The `hasAttachment` filter on notmuch depends on the `attachment` tag, which not every index
   populates; the tool says so when it uses it.
 

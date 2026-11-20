@@ -13,6 +13,12 @@ export interface AccountSyncState {
   lastSyncOk: boolean;
   /** Messages indexed on the last run, to tell at a glance whether a sync did anything. */
   indexedMessages: number | undefined;
+  /**
+   * When the last **successful** sync ended. Kept across failures, so a failed run does not erase the
+   * fact that the mirror was once complete, and absent until the first success. Older state files lack
+   * it: for those `lastSyncOk` stands in, see `hasCompletedSync`.
+   */
+  lastOkAt?: string | undefined;
 }
 
 export interface MirrorState {
@@ -55,13 +61,26 @@ export async function readMirrorState(): Promise<MirrorState> {
 export async function recordSync(accountId: string, entry: AccountSyncState): Promise<void> {
   const path = resolveStatePath();
   const state = await readMirrorState();
+  const previous = state.accounts[accountId];
+  const lastOkAt = entry.lastSyncOk ? entry.lastSyncAt : (previous?.lastOkAt ?? (previous?.lastSyncOk === true ? previous.lastSyncAt : undefined));
 
-  state.accounts[accountId] = entry;
+  state.accounts[accountId] = { ...entry, ...(lastOkAt === undefined ? {} : { lastOkAt }) };
 
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
 
   logger.debug('mirror state updated', { accountId, lastSyncOk: entry.lastSyncOk });
+}
+
+/**
+ * Whether the account's mirror has ever completed a sync. A mirror whose only runs failed may be
+ * half filled, typically by a first sync cut short by the timeout, and searching it would answer for a
+ * fraction of the mailbox without saying so.
+ */
+export function hasCompletedSync(state: MirrorState, accountId: string): boolean {
+  const entry = state.accounts[accountId];
+
+  return entry !== undefined && (entry.lastOkAt !== undefined || entry.lastSyncOk);
 }
 
 /**

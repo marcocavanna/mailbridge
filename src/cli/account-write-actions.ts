@@ -1,3 +1,4 @@
+import { collectAuth, signInFlow, storeCredentialFor } from './account-auth-actions.js';
 import { renderAccountDetail } from './account-view.js';
 import { pickAccount, requireOverview } from './account-resolve.js';
 import { testAccount } from './account-read-actions.js';
@@ -41,45 +42,61 @@ async function collectAccount(current?: Account): Promise<Account> {
     initialValue: isEdit ? current.label : address,
   });
 
+  const auth = await collectAuth(current?.auth);
+  const isOAuth = auth.type === 'oauth2';
+
   prompts.log.step('IMAP — reading');
 
+  // An account moving to Microsoft 365 is moving server too: proposing the old host would be wrong.
+  const isMovingToOAuth = isOAuth && current?.auth.type !== 'oauth2';
   const imapHost = await askText('  IMAP host', {
-    ...(isEdit ? { initialValue: current.imap.host } : { placeholder: 'imap.example.com' }),
+    ...(isEdit && !isMovingToOAuth ? { initialValue: current.imap.host } : {}),
+    ...(isMovingToOAuth ? { initialValue: 'outlook.office365.com' } : {}),
+    ...(!isEdit && !isOAuth ? { placeholder: 'imap.example.com' } : {}),
   });
   const imapPort = await askPort('  IMAP port (implicit TLS)', isEdit ? current.imap.port : 993);
   const imapUser = await askText('  IMAP username', { initialValue: isEdit ? current.imap.user : address });
 
-  prompts.log.step('SMTP — sending');
+  // ---- SMTP: optional, and absent by construction on OAuth accounts
+  let smtp: Account['smtp'];
 
-  const smtpHost = await askText('  SMTP host', {
-    initialValue: isEdit ? current.smtp.host : imapHost.replace(/^imap\./, 'smtp.'),
-  });
-  const smtpPort = await askPort('  SMTP port (465 TLS, 587 STARTTLS)', isEdit ? current.smtp.port : 465);
-  const smtpUser = await askText('  SMTP username', {
-    initialValue: isEdit ? (current.smtp.user ?? current.imap.user) : imapUser,
-  });
+  if (isOAuth) {
+    prompts.log.info('OAuth accounts prepare drafts and send nothing: drafts are sent from the mail client.');
+  } else if (await askConfirm('Configure SMTP to send from here?', isEdit ? current.smtp !== undefined : true)) {
+    prompts.log.step('SMTP — sending');
 
-  const mirrorEnabled = await askConfirm(
-    'Enable the local mirror for fast search?',
-    isEdit ? current.mirror.enabled : true,
-  );
+    const smtpHost = await askText('  SMTP host', {
+      initialValue: current?.smtp?.host ?? imapHost.replace(/^imap\./, 'smtp.'),
+    });
+    const smtpPort = await askPort('  SMTP port (465 TLS, 587 STARTTLS)', current?.smtp?.port ?? 465);
+    const smtpUser = await askText('  SMTP username', {
+      initialValue: current?.smtp?.user ?? imapUser,
+    });
+
+    smtp = {
+      host:   smtpHost,
+      port:   smtpPort,
+      secure: smtpPort === 465,
+      ...(smtpUser === imapUser ? {} : { user: smtpUser }),
+    };
+  }
+
+  // ---- Mirror: OAuth accounts sync through the loopback proxy, see mirror/imap-proxy.ts
+  const mirrorEnabled = await askConfirm('Enable the local mirror for fast search?', isEdit ? current.mirror.enabled : true);
 
   return accountSchema.parse({
     id,
     label: accountLabel,
     address,
+    auth,
     imap: {
       host:   imapHost,
       port:   imapPort,
       secure: true,
       user:   imapUser,
+      ...(isEdit && current.imap.authMechs !== undefined && !isOAuth ? { authMechs: current.imap.authMechs } : {}),
     },
-    smtp: {
-      host:   smtpHost,
-      port:   smtpPort,
-      secure: smtpPort === 465,
-      ...(smtpUser === imapUser ? {} : { user: smtpUser }),
-    },
+    ...(smtp === undefined ? {} : { smtp }),
     folders: isEdit ? current.folders : {},
     mirror:  { enabled: mirrorEnabled, ...(isEdit && current.mirror.maildirPath !== undefined ? { maildirPath: current.mirror.maildirPath } : {}) },
   });
@@ -91,15 +108,8 @@ export async function addAccountFlow(): Promise<void> {
 
   prompts.log.success(`Account "${account.id}" written to ${path}`);
 
-  // ---- Credential: the password is asked for by `security`, not by this process
-  prompts.log.step('Storing the credential in the Keychain — macOS asks for the password, it never passes through here');
-
-  await promptAndStorePassword(account.id, account.imap.user, 'imap');
-
-  if (account.smtp.user !== undefined && account.smtp.user !== account.imap.user) {
-    prompts.log.step('The SMTP username differs: storing the SMTP credential as well');
-    await promptAndStorePassword(account.id, account.smtp.user, 'smtp');
-  }
+  // ---- Credential: typed into `security` or into the browser, never through this process
+  await storeCredentialFor(account);
 
   // ---- Verify right away: an account configured and never tested is one you find broken later
   if (await askConfirm('Test the connection now?', true)) {
@@ -111,14 +121,24 @@ export async function editAccountFlow(accountId?: string): Promise<void> {
   const target = accountId ?? (await pickAccount('Which account should I edit?'));
   const entry = await requireOverview(target);
 
+  const isOAuth = entry.account.auth.type === 'oauth2';
+
   const choice = required(await prompts.select({
     message: `What should I change on "${target}"?`,
     options: [
-      { value: 'fields', label: 'Hosts, ports, address, sender name' },
-      { value: 'password', label: 'The password only' },
+      { value: 'fields', label: 'Hosts, ports, address, sender name, sign-in method' },
+      isOAuth
+        ? { value: 'login', label: 'Sign in again', hint: 'after a password change or a revoked session' }
+        : { value: 'password', label: 'The password only' },
       { value: 'mirror', label: `Local mirror (now: ${entry.account.mirror.enabled ? 'on' : 'off'})` },
     ],
   }));
+
+  if (choice === 'login') {
+    await signInFlow(entry.account);
+
+    return;
+  }
 
   if (choice === 'password') {
     prompts.log.step('macOS asks for the password: it never passes through this process');
@@ -146,6 +166,13 @@ export async function editAccountFlow(accountId?: string): Promise<void> {
   const updated = await collectAccount(entry.account);
 
   await updateAccount(target, updated);
+
+  // A switch of sign-in method needs the new credential right away, or the account is configured and
+  // unusable.
+  if (updated.auth.type !== entry.account.auth.type) {
+    prompts.log.warn('The sign-in method changed: the old Keychain item stays where it is, untouched.');
+    await storeCredentialFor(updated);
+  }
 
   prompts.log.success(`Account "${target}" updated${updated.id === target ? '' : ` and renamed to "${updated.id}"`}.`);
 
@@ -192,10 +219,11 @@ export async function removeAccountFlow(accountId?: string): Promise<void> {
 
   if (await askConfirm('Delete the Keychain credential as well?', false)) {
     const deleted = await deletePassword(target, 'imap');
+    const deletedToken = await deletePassword(target, 'oauth');
 
     await deletePassword(target, 'smtp');
 
-    prompts.log.success(deleted ? 'Credential deleted.' : 'There was no credential to delete.');
+    prompts.log.success(deleted || deletedToken ? 'Credential deleted.' : 'There was no credential to delete.');
   } else {
     prompts.log.info('Credential left in the Keychain.');
   }

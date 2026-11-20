@@ -14,7 +14,7 @@ names in `src/imap/folders.ts` and the deliberately non-ASCII test fixture.
 
 | Command | What it does |
 |---|---|
-| `pnpm build` | Cleans `dist/` and compiles. The clean matters: without it, renamed or split modules leave dead files behind that would ship in the published package |
+| `pnpm build` | Cleans `dist/`, compiles, and marks the two `bin` entries executable. The clean matters: without it, renamed or split modules leave dead files behind that would ship in the published package. The `chmod` matters for a global install linked to this checkout (`npm install -g <path>`): `tsc` writes files without the executable bit, and every rebuild would otherwise break the `mailbridge` command and the MCP server started through it |
 | `pnpm typecheck` | `tsc --noEmit` over sources, tests and config |
 | `pnpm test` | Vitest, only the tests that earn their place |
 | `pnpm dev` | MCP server in watch mode over stdio |
@@ -36,6 +36,15 @@ Two halves that only meet through the search layer:
    *search*, because `IMAP SEARCH` is slow and implemented differently by every provider. The mirror is
    a cache: it holds nothing that cannot be rebuilt from the server.
 
+An OAuth account (Microsoft 365) is mirrored through a **loopback IMAP proxy** that lives only during
+a sync: mbsync logs in to it with a one-time password, the proxy logs in upstream with XOAUTH2. It is the
+one plain-text leg in the project, on `127.0.0.1` only; the reasons and the fences are in
+[.claude/rules/security.md](.claude/rules/security.md) §6.
+
+Search picks the engine **per account**: notmuch where the mirror is synced, IMAP across every folder
+where it is not. One account without a mirror never takes the index away from the others, and the index
+is always scoped to the mirrored accounts in scope, because a disabled mirror leaves stale files behind.
+
 The mirror is **optional**, and that is a distribution property, not just a convenience: an `npm install`
 cannot bring `isync` or `notmuch`, so everything has to work without them. Search falls back to IMAP and
 says so; commands that genuinely need the mirror check for the tools first and name the missing formula.
@@ -54,7 +63,8 @@ Anything that turns a missing optional tool into an obscure failure is a bug —
 
 ```
 src/config/    schema, reading and mutation of accounts.json (non-secret)
-src/secrets/   reading and writing credentials in the macOS Keychain
+src/secrets/   reading and writing credentials in the macOS Keychain; `imap-auth` picks password or token
+src/oauth/     OAuth for Microsoft 365: PKCE, browser sign-in, token refresh. No network in `microsoft.ts`
 src/imap/      connections, folders, mailbox management, messages, flags, bulk ops,
                headers, subscriptions, threads, health checks
 src/smtp/      draft composition and sending
