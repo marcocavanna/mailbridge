@@ -9,6 +9,7 @@ anchored **gets reported and written here**, never guessed.
 | sign-in method | `AccountAuth` | `password` (Keychain item `mailbridge:<id>`) or `oauth2` (refresh token in `mailbridge:<id>:oauth`) |
 | OAuth sign-in | `signIn` | Authorization code with PKCE in the browser, redirect to a loopback listener. Run once, and again after a revoked session |
 | access token | `TokenSet` | Short-lived, in memory only. Renewed from the refresh token by `getAccessToken` |
+| IMAP tunnel | `runImapTunnel` | The command mbsync runs for an OAuth account (`mailbridge imap-tunnel <id>`): XOAUTH2 upstream, `PREAUTH` to mbsync, then a pipe |
 | refresh token | — | The only persisted OAuth credential. Rotated by Microsoft on every use, and stored again each time |
 | folder | `Folder` | Full IMAP path, with the server's delimiter. Not "label" |
 | special folder | `SpecialFolder` | `inbox` \| `sent` \| `drafts` \| `archive` \| `trash` \| `junk` — a union of literals, not an enum |

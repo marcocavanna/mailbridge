@@ -149,19 +149,21 @@ cache: it is never the source of truth and holds nothing the server cannot retur
 ## 6. Network
 
 TLS is mandatory: IMAPS on 993 and SMTP submission on 465 (implicit) or 587 with STARTTLS. The OAuth
-endpoints are HTTPS on `login.microsoftonline.com`. Two exceptions, both on the loopback interface and
-both never leaving the machine:
+endpoints are HTTPS on `login.microsoftonline.com`. The one plain-HTTP leg is the OAuth redirect on
+`localhost`, checked against a one-time `state`, which never leaves the machine.
 
-- the OAuth redirect, plain HTTP on `localhost`, checked against a one-time `state`;
-- the **mirror proxy** for OAuth accounts (`src/mirror/imap-proxy.ts`), plain IMAP between mbsync and
-  `127.0.0.1`. It is the only way to give mbsync an XOAUTH2 login on macOS, whose `libsasl2` has no such
-  plugin. It is bounded on every side: it listens on `127.0.0.1` only and only while a sync runs; the
-  password is 32 random bytes, generated per run, compared in constant time, accepted together with the
-  account's own user name only, and one attempt per connection; it is written to `mbsyncrc` (mode
-  `0600`) for that run and the file is rewritten without it when the run ends; before login the proxy
-  answers nothing but `CAPABILITY`, `NOOP`, `ID`, `LOGOUT` and `LOGIN`. Reading loopback traffic takes
-  root, which reads the Keychain anyway. mbsync's "password is being sent in the clear" warning is
-  filtered from the sync output, that exact line and nothing else.
+**OAuth accounts reach mbsync through `Tunnel`, never through a listening socket.** macOS's `libsasl2`
+has no XOAUTH2 plugin, so mbsync runs `mailbridge imap-tunnel <id>` and speaks IMAP over the child's
+stdin and stdout. The tunnel signs in upstream with XOAUTH2 over TLS and greets mbsync with `PREAUTH`,
+so mbsync sends no LOGIN and holds no password. The pipe is private to mbsync and its child; the token
+lives in the child's memory only; `mbsyncrc` holds a command and nothing secret.
+
+This replaced a first version that ran an IMAP proxy on `127.0.0.1` with a per-run password. An audit
+on 2026-11-20 found it reachable by every local process, sandboxed apps included, and parsing their
+input before login: one connection that did not read its replies grew the process by 345 MB in a
+second, a refused login did not stop further attempts on the same connection, and a crash left a
+`mbsyncrc` pointing at a port anyone could take. The tunnel removes the listener and with it every one
+of those. **Do not reintroduce a listening socket for the mirror.**
 
 No plaintext
 fallback, and no disabling certificate verification — a `rejectUnauthorized: false` in this repository is

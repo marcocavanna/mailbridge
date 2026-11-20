@@ -81,7 +81,7 @@ async function collectAccount(current?: Account): Promise<Account> {
     };
   }
 
-  // ---- Mirror: OAuth accounts sync through the loopback proxy, see mirror/imap-proxy.ts
+  // ---- Mirror: OAuth accounts sync through mbsync's Tunnel, see mirror/imap-tunnel.ts
   const mirrorEnabled = await askConfirm('Enable the local mirror for fast search?', isEdit ? current.mirror.enabled : true);
 
   return accountSchema.parse({

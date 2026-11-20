@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { resolveMailRoot, resolveMaildirPath } from './paths.js';
 
@@ -7,7 +8,6 @@ import { resolveConfigPath } from '#config/load-accounts';
 import { buildServiceName } from '#secrets/keychain';
 import { MailbridgeError } from '#shared/errors';
 
-import type { ProxyEndpoint } from './imap-proxy.js';
 import type { Account, AccountsConfig } from '#config/accounts.schema';
 
 /* --------
@@ -38,37 +38,53 @@ function passwordAccountLines(account: Account): string[] {
 }
 
 /**
- * The `IMAPAccount` lines for an OAuth account: mbsync talks to the loopback proxy of this sync run,
- * which logs in to the real server with XOAUTH2 (see `imap-proxy.ts`). `Pass` is the proxy's one-time
- * password: valid for that proxy only, dead when the run ends, and the file is rewritten without it
- * right after. `LOGIN` is the IMAP command, not a SASL mechanism, so the system `libsasl2` is never
- * involved.
+ * The command mbsync runs to reach an OAuth account: this same build of mailbridge, `imap-tunnel`.
+ *
+ * Absolute paths for both node and the entry point, because launchd starts the scheduled sync with a
+ * minimal PATH, and the node of an nvm install is not on it. They are the ones running this sync, so the
+ * tunnel is always the same version as the code that wrote the file.
+ *
+ * mbsync hands the value to `/bin/sh -c`: every part is single-quoted, and a path that would need any
+ * other escaping is refused rather than escaped.
  */
-function proxiedAccountLines(account: Account, endpoint: ProxyEndpoint): string[] {
+export function buildTunnelCommand(accountId: string, nodePath: string, entryPath: string): string {
+  for (const part of [nodePath, entryPath, accountId]) {
+    if (/['"\\\n\r]/.test(part)) {
+      throw new MailbridgeError('mirror_unavailable', `Cannot write a tunnel command for "${accountId}": the path ${part} contains quotes or line breaks.`, {
+        remediation: 'Install node and mailbridge under paths without quotes, backslashes or line breaks.',
+      });
+    }
+  }
+
+  return `'${nodePath}' '${entryPath}' imap-tunnel '${accountId}'`;
+}
+
+function resolveEntryPath(): string {
+  // This module is `dist/mirror/mbsyncrc.js`; the CLI entry is `dist/cli/main.js`.
+  return fileURLToPath(new URL('../cli/main.js', import.meta.url));
+}
+
+/**
+ * The `IMAPAccount` lines for an OAuth account: no host, no user, no password. mbsync runs the tunnel and
+ * speaks IMAP on its stdin and stdout; the tunnel signs in with XOAUTH2 and greets with `PREAUTH`, so
+ * mbsync never logs in. See `imap-tunnel.ts`.
+ */
+function tunnelAccountLines(account: Account): string[] {
   return [
-    `Host ${endpoint.host}`,
-    `Port ${endpoint.port}`,
-    `User ${account.imap.user}`,
-    `Pass ${endpoint.password}`,
-    'AuthMechs LOGIN',
+    `Tunnel "${buildTunnelCommand(account.id, process.execPath, resolveEntryPath())}"`,
     'TLSType None',
   ];
 }
 
 /**
- * Configuration block for one account. An OAuth account needs the endpoint of a running proxy: without
- * one there is nothing mbsync could connect to, and the caller leaves the account out.
+ * Configuration block for one account.
  */
-export function buildAccountBlock(account: Account, endpoint?: ProxyEndpoint): string {
+export function buildAccountBlock(account: Account): string {
   const maildir = resolveMaildirPath(account);
-
-  if (account.auth.type === 'oauth2' && endpoint === undefined) {
-    throw new MailbridgeError('mirror_unavailable', `"${account.id}" signs in with OAuth and needs the loopback proxy to sync.`);
-  }
 
   return [
     `IMAPAccount ${account.id}`,
-    ...(endpoint === undefined ? passwordAccountLines(account) : proxiedAccountLines(account, endpoint)),
+    ...(account.auth.type === 'oauth2' ? tunnelAccountLines(account) : passwordAccountLines(account)),
     '',
     `IMAPStore ${account.id}-remote`,
     `Account ${account.id}`,
@@ -98,24 +114,19 @@ export function buildAccountBlock(account: Account, endpoint?: ProxyEndpoint): s
 /**
  * Generates `mbsyncrc` from the account configuration and returns its path.
  *
- * The file is derived: it is regenerated on every sync, so it cannot drift from `accounts.json`.
- * OAuth accounts are written only when this run has a proxy for them (`endpoints`); outside a run the
- * file carries no block for them, and therefore no password, however short-lived.
+ * The file is derived: it is regenerated on every sync, so it cannot drift from `accounts.json`. It
+ * holds no secret of any kind: passwords come from the Keychain through `PassCmd`, OAuth accounts go
+ * through the tunnel command.
  */
-export async function writeMbsyncrc(
-  config: AccountsConfig,
-  endpoints: ReadonlyMap<string, ProxyEndpoint> = new Map(),
-): Promise<string> {
+export async function writeMbsyncrc(config: AccountsConfig): Promise<string> {
   const path = resolveMbsyncrcPath();
-  const mirrored = config.accounts.filter((account) => (
-    account.mirror.enabled && (account.auth.type !== 'oauth2' || endpoints.has(account.id))
-  ));
+  const mirrored = config.accounts.filter((account) => account.mirror.enabled);
 
   const content = [
     '# Generated by mailbridge. Do not edit by hand: it is rewritten on every `mailbridge sync`.',
     `# Mirror root: ${resolveMailRoot()}`,
     '',
-    ...mirrored.map((account) => buildAccountBlock(account, endpoints.get(account.id))),
+    ...mirrored.map((account) => buildAccountBlock(account)),
   ].join('\n');
 
   await mkdir(dirname(path), { recursive: true });

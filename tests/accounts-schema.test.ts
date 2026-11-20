@@ -41,7 +41,7 @@ describe('account authentication', () => {
     expect(issues({ ...base, auth: oauth, mirror: { enabled: false } })).toEqual([]);
   });
 
-  it('accepts an OAuth account with the mirror on: mbsync goes through the loopback proxy', () => {
+  it('accepts an OAuth account with the mirror on: mbsync goes through the tunnel', () => {
     expect(issues({ ...base, auth: oauth })).toEqual([]);
   });
 

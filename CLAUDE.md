@@ -36,10 +36,11 @@ Two halves that only meet through the search layer:
    *search*, because `IMAP SEARCH` is slow and implemented differently by every provider. The mirror is
    a cache: it holds nothing that cannot be rebuilt from the server.
 
-An OAuth account (Microsoft 365) is mirrored through a **loopback IMAP proxy** that lives only during
-a sync: mbsync logs in to it with a one-time password, the proxy logs in upstream with XOAUTH2. It is the
-one plain-text leg in the project, on `127.0.0.1` only; the reasons and the fences are in
-[.claude/rules/security.md](.claude/rules/security.md) §6.
+An OAuth account (Microsoft 365) is mirrored through mbsync's **`Tunnel`**: mbsync runs
+`mailbridge imap-tunnel <id>` and speaks IMAP on its stdin and stdout, the tunnel signs in upstream with
+XOAUTH2 and greets with `PREAUTH`. No socket listens and no secret is written. A loopback proxy was tried
+first and replaced after an audit: the reasons are in [.claude/rules/security.md](.claude/rules/security.md)
+§6, and a listening socket for the mirror is not to come back.
 
 Search picks the engine **per account**: notmuch where the mirror is synced, IMAP across every folder
 where it is not. One account without a mirror never takes the index away from the others, and the index

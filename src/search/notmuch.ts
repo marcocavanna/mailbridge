@@ -67,21 +67,6 @@ function toFilenameList(filename: string | string[] | undefined): string[] {
 }
 
 /**
- * The filename to believe, among the several a notmuch message can carry.
- *
- * A message moved between folders keeps its `Message-Id`, so the index holds one message with the
- * live file and the tombstone of the folder it left. Taking the first one at random attributes the
- * message to whichever folder notmuch happens to list first, which for archived mail is usually the
- * INBOX it was filed out of months ago.
- *
- * `undefined` means every copy is a tombstone: the message is gone from the server and only survives
- * in the mirror, so it is not a result.
- */
-function pickLiveFilename(filenames: readonly string[]): string | undefined {
-  return filenames.find((candidate) => !isTombstoneFile(candidate));
-}
-
-/**
  * Does the live copy sit in one of the folders the caller asked for?
  *
  * Applied only when a folder criterion is present, and only against folders that resolved in the
@@ -105,6 +90,43 @@ function isInScopedFolder(
   const expected = scoped.get(location.accountId);
 
   return expected === undefined || expected === location.folder;
+}
+
+/**
+ * The live copy to read account and folder from, among the copies **inside the search scope**.
+ *
+ * A message moved between folders keeps its `Message-Id`, so the index holds one message with the
+ * live file and the tombstone of the folder it left: taking the first file at random attributes the
+ * message to whichever folder notmuch happens to list first, usually the INBOX it was filed out of.
+ *
+ * notmuch also keeps one message per `Message-Id` across mirrors. The same message can sit in two of
+ * them, typically a mailbox moved to a new server with the old mirror still on disk, and the query
+ * matches because one of its files is in scope while the first file listed is not. Reading the location
+ * off that file would attribute the result to the wrong account and folder.
+ *
+ * With a folder criterion the copy in that folder wins, since an account can hold the same message in
+ * two of its folders. `undefined` when no live copy is in scope: gone from the server, or present only
+ * in a mirror outside the search.
+ */
+export function pickScopedLocation(
+  filenames: readonly string[],
+  scopeAccountIds: readonly string[],
+  options: NotmuchQueryOptions,
+  hasFolderCriterion: boolean,
+): { filename: string; location: ReturnType<typeof locateInMirror> } | undefined {
+  const live = filenames
+    .filter((candidate) => !isTombstoneFile(candidate))
+    .map((filename) => ({ filename, location: locateInMirror(filename) }));
+
+  const inScope = scopeAccountIds.length === 0
+    ? live
+    : live.filter((entry) => entry.location !== undefined && scopeAccountIds.includes(entry.location.accountId));
+
+  if (!hasFolderCriterion) {
+    return inScope[0];
+  }
+
+  return inScope.find((entry) => isInScopedFolder(entry.location, options));
 }
 
 /* --------
@@ -149,26 +171,26 @@ export async function searchWithNotmuch(
   const hits: SearchHit[] = [];
 
   for (const message of messages) {
-    // ---- Location, read off the live copy rather than an arbitrary one
-    const filename = pickLiveFilename(toFilenameList(message.filename));
+    // ---- Location, read off a live copy inside the scope rather than an arbitrary one
+    // The `folder:` term alone is not enough: a message filed out of the INBOX still has its
+    // tombstone there, so the term matches the folder it left as well as the one it lives in.
+    const picked = pickScopedLocation(
+      toFilenameList(message.filename),
+      criteria.accountId === undefined ? (options.accountIds ?? []) : [criteria.accountId],
+      options,
+      criteria.folder !== undefined,
+    );
 
-    if (filename === undefined) {
-      // Every copy is a tombstone: the message no longer exists on the server.
+    if (picked === undefined) {
+      // No live copy in scope: gone from the server, or present only in a mirror outside the search.
       continue;
     }
 
-    const location = locateInMirror(filename);
+    const { location } = picked;
     const tags = message.tags ?? [];
     const hasAttachment = tags.includes('attachment');
 
     if (criteria.hasAttachment === true && !hasAttachment) {
-      continue;
-    }
-
-    // ---- Folder scoping, re-checked on the live copy
-    // The `folder:` term alone is not enough: a message filed out of the INBOX still has its
-    // tombstone there, so the term matches the folder it left as well as the one it lives in.
-    if (criteria.folder !== undefined && !isInScopedFolder(location, options)) {
       continue;
     }
 

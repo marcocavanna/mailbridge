@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { accountSchema } from '#config/accounts.schema';
-import { buildAccountBlock } from '#mirror/mbsyncrc';
+import { buildAccountBlock, buildTunnelCommand } from '#mirror/mbsyncrc';
 
 /* --------
  * Helpers
@@ -84,23 +84,19 @@ describe('OAuth account block', () => {
     imap: { host: 'outlook.office365.com', user: 'you@example.com' },
   });
 
-  const endpoint = { host: '127.0.0.1', port: 54321, password: 'one-time-password' };
+  it('runs the tunnel with absolute paths, and holds no host, user or password', () => {
+    const block = buildAccountBlock(oauthAccount);
+    const tunnel = /^Tunnel "'(.+)' '(.+)' imap-tunnel 'office'"$/m.exec(block);
 
-  it('points mbsync at the loopback proxy, with IMAP LOGIN and the one-time password', () => {
-    const block = buildAccountBlock(oauthAccount, endpoint);
-
-    expect(block).toContain('Host 127.0.0.1\nPort 54321\nUser you@example.com\nPass one-time-password\nAuthMechs LOGIN\nTLSType None');
+    expect(tunnel?.[1]).toBe(process.execPath);
+    expect(tunnel?.[2]).toMatch(/\/cli\/main\.js$/);
+    expect(block).toContain('TLSType None');
+    expect(block).not.toMatch(/^(Host|User|Pass|PassCmd|AuthMechs) /m);
   });
 
-  it('never names the real server or the Keychain in a proxied block', () => {
-    const block = buildAccountBlock(oauthAccount, endpoint);
-
-    expect(block).not.toContain('outlook.office365.com');
-    expect(block).not.toContain('PassCmd');
-  });
-
-  it('refuses to write an OAuth account without a running proxy', () => {
-    expect(() => buildAccountBlock(oauthAccount)).toThrow(/needs the loopback proxy/);
+  it('refuses a path that would need escaping in the shell command', () => {
+    expect(() => buildTunnelCommand('office', "/opt/it's/node", '/x/main.js')).toThrow(/quotes or line breaks/);
+    expect(() => buildTunnelCommand('office', '/opt/node', '/x/main.js\n; rm -rf ~')).toThrow(/quotes or line breaks/);
   });
 
   it('keeps a password account on the real server with TLS', () => {

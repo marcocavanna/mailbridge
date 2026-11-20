@@ -59,11 +59,14 @@ Vitest. Test what earns its place; do not pad for coverage.
   sinking the others, and keeps the limit across folders.
 - **The schema boundary for OAuth**: SMTP refused on an OAuth account, multi-tenant aliases refused, and
   `password` as the default so older configurations keep their meaning.
-- **The mirror proxy**, against a fake Exchange on loopback: no `LOGINDISABLED` and no `AUTH=` before
-  login; a wrong password or another user refused without asking for a token; the XOAUTH2 response in
-  the documented shape; the server's capabilities handed to mbsync; bytes piped after login; an upstream
-  refusal turned into `NO` with the reason. The generated `mbsyncrc` points an OAuth account at the proxy
-  and never at the real server, and refuses one without a running proxy.
+- **The mirror tunnel**, against a fake Exchange on loopback: XOAUTH2 in the documented shape, `PREAUTH`
+  as the first thing mbsync reads, with the server's capabilities, bytes piped both ways until LOGOUT,
+  no token on the output, an upstream refusal turned into `BYE` with the reason, and no connection at all
+  without a token. The generated `mbsyncrc` runs the tunnel with absolute paths, holds no host, user or
+  password for an OAuth account, and refuses a path that would need shell escaping.
+- **A message held by two mirrors** (a mailbox moved to a new server, old mirror still on disk) is
+  attributed to the copy of the account in scope, and dropped when no copy is in scope: notmuch keeps one
+  message per `Message-Id`, and the first file it lists can belong to the wrong mirror.
 - **A half-filled mirror stays out of the index**: a mirror whose only runs failed is searched on the
   server, and the last success survives a later failure. Older state files are read by their outcome.
 

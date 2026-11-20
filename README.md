@@ -92,13 +92,12 @@ What an OAuth account does differently:
 - **It sends nothing.** It reads, searches, organizes and prepares drafts; you send the drafts from your
   mail client. The token carries `IMAP.AccessAsUser.All` and `offline_access` and no `SMTP.Send`, so it
   could not send even if something tried. `send_draft` refuses it and says where the draft is.
-- **Its mirror goes through a loopback proxy.** `mbsync` authenticates through the system `libsasl2`,
-  which on macOS has no XOAUTH2 plugin, and Exchange offers nothing else. So during a sync mailbridge
-  opens an IMAP proxy on `127.0.0.1`: mbsync logs in to it with `LOGIN` and a password generated for that
-  run alone, the proxy logs in to Exchange with XOAUTH2 and from then on copies bytes without reading
-  them. The proxy exists only while the sync runs, and the generated `mbsyncrc` is rewritten without the
-  password when it ends. Between mbsync and the proxy the traffic is plain text, on purpose: it never
-  leaves the machine. Toward Exchange it is TLS as always.
+- **Its mirror goes through mbsync's `Tunnel`.** `mbsync` authenticates through the system `libsasl2`,
+  which on macOS has no XOAUTH2 plugin, and Exchange offers nothing else. So the generated `mbsyncrc`
+  tells mbsync to run `mailbridge imap-tunnel <id>` and speak IMAP on its stdin and stdout. The tunnel
+  opens TLS to Exchange, signs in with XOAUTH2, greets mbsync with `PREAUTH`, and from then on copies
+  bytes without reading them. mbsync never logs in, nothing listens on any port, and no password or token
+  is written anywhere.
 
 ### Register the app in your tenant
 

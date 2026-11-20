@@ -5,6 +5,7 @@ import { colors } from './ui.js';
 import { authSchema } from '#config/accounts.schema';
 import { readConfigOrEmpty } from '#config/write-accounts';
 import { getAccessToken } from '#oauth/access-token';
+import { runImapTunnel } from '#mirror/imap-tunnel';
 import { signIn } from '#oauth/login';
 import { promptAndStorePassword } from '#secrets/keychain-write';
 import { MailbridgeError } from '#shared/errors';
@@ -138,6 +139,24 @@ export async function requireAccountById(accountId: string): Promise<Account> {
   }
 
   return account;
+}
+
+/**
+ * `mailbridge imap-tunnel`: the command mbsync runs to reach an OAuth account. See `imap-tunnel.ts`.
+ */
+export async function runTunnelCommand(accountId: string): Promise<void> {
+  const account = await requireAccountById(accountId);
+
+  if (account.auth.type !== 'oauth2') {
+    throw new MailbridgeError('config_invalid', `"${accountId}" signs in with a password: mbsync reaches it directly.`);
+  }
+
+  await runImapTunnel({
+    account,
+    getAccessToken: async () => getAccessToken(account),
+    input:          process.stdin,
+    output:         process.stdout,
+  });
 }
 
 /**

@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { startImapProxy } from './imap-proxy.js';
 import { withSyncLock } from './lock.js';
 import { listMirroredChannels, writeMbsyncrc } from './mbsyncrc.js';
 import { resolveMailRoot, resolveMaildirPath } from './paths.js';
@@ -11,11 +10,10 @@ import { assertMirrorTools } from './prerequisites.js';
 import { recordSync } from './state.js';
 
 import { resolveConfigPath } from '#config/load-accounts';
-import { getAccessToken } from '#oauth/access-token';
+import { hasCredentials, missingCredentialRemediation } from '#secrets/keychain';
 import { MailbridgeError, describeUnknownError } from '#shared/errors';
 import { logger } from '#shared/logger';
 
-import type { ImapProxy } from './imap-proxy.js';
 import type { Account, AccountsConfig } from '#config/accounts.schema';
 
 /* --------
@@ -76,15 +74,22 @@ function resolveNotmuchConfigPath(): string {
 }
 
 /**
- * mbsync warns on every run that the password travels in the clear. Towards the loopback proxy that is
- * the design (see `imap-proxy.ts`), and a line repeated on every sync would bury the ones that matter.
- * Only that exact warning is dropped.
+ * What went wrong in an mbsync run, in a form a log can be read by: the exit code or the signal, and the
+ * last lines of its own output. `execFile`'s message alone starts with "Command failed" and can end
+ * there, which says nothing about why.
  */
-function withoutLoopbackWarning(output: string): string {
-  return output
-    .split('\n')
-    .filter((line) => !line.includes('*** IMAP Warning *** Password is being sent in the clear'))
-    .join('\n');
+function describeSyncFailure(cause: unknown): string | undefined {
+  if (typeof cause !== 'object' || cause === null || !('stderr' in cause)) {
+    return tail(describeUnknownError(cause), 5);
+  }
+
+  const failure = cause as { code?: unknown; signal?: unknown; killed?: unknown; stderr?: unknown; stdout?: unknown };
+  const how = failure.killed === true || typeof failure.signal === 'string'
+    ? `killed by ${String(failure.signal ?? 'signal')}${failure.killed === true ? ' (timeout)' : ''}`
+    : `exit code ${String(failure.code ?? 'unknown')}`;
+  const output = `${String(failure.stderr ?? '')}\n${String(failure.stdout ?? '')}`;
+
+  return [`mbsync ${how}`, tail(output, 8)].filter((part) => part !== undefined).join('\n');
 }
 
 function tail(output: string, lines: number): string | undefined {
@@ -179,29 +184,11 @@ async function runSyncLocked(config: AccountsConfig, options: RunSyncOptions): P
     await mkdir(resolveMaildirPath(account), { recursive: true });
   }
 
-  // ---- Loopback proxies for the OAuth accounts of this run, closed whatever happens
-  const proxies = new Map<string, ImapProxy>();
+  // ---- Sync
+  const mbsyncrcPath = await writeMbsyncrc(config);
   const runs: SyncRunResult[] = [];
 
-  try {
-    for (const account of selected) {
-      if (account.auth.type === 'oauth2') {
-        proxies.set(account.id, await startImapProxy({ account, getAccessToken: async () => getAccessToken(account) }));
-      }
-    }
-
-    const endpoints = new Map([...proxies].map(([accountId, proxy]) => [accountId, proxy.endpoint] as const));
-    const mbsyncrcPath = await writeMbsyncrc(config, endpoints);
-
-    await syncChannels(selected, mbsyncrcPath, runs, onProgress);
-  } finally {
-    await Promise.allSettled([...proxies.values()].map(async (proxy) => proxy.close()));
-
-    // The one-time passwords are dead with their proxies; the file is rewritten without them anyway.
-    if (proxies.size > 0) {
-      await writeMbsyncrc(config).catch(() => undefined);
-    }
-  }
+  await syncChannels(selected, mbsyncrcPath, runs, onProgress);
 
   return indexAndSummarize(channels.length, runs, onProgress);
 }
@@ -221,10 +208,13 @@ async function syncChannels(
     onProgress?.({ kind: 'account-start', accountId: channel, position: position + 1, total: accounts.length });
 
     try {
-      // An OAuth account checks its token before mbsync starts: a revoked sign-in then reads as what it
-      // is, with the command that fixes it, instead of as a login refused by the proxy.
-      if (account.auth.type === 'oauth2') {
-        await getAccessToken(account);
+      // An OAuth account that never signed in fails here, with the command that fixes it, instead of as
+      // a tunnel that could not log in. Only the presence is checked: the tunnel renews the token itself,
+      // and renewing it here too would rotate the refresh token twice per run.
+      if (account.auth.type === 'oauth2' && !(await hasCredentials(account))) {
+        throw new MailbridgeError('credential_missing', `"${account.id}" has never signed in.`, {
+          remediation: missingCredentialRemediation(account),
+        });
       }
 
       const { stdout, stderr } = await execFileAsync('mbsync', ['-c', mbsyncrcPath, channel], {
@@ -232,7 +222,7 @@ async function syncChannels(
         maxBuffer: MAX_OUTPUT_BYTES,
       });
 
-      runs.push({ accountId: channel, ok: true, detail: tail(withoutLoopbackWarning(`${stdout}\n${stderr}`), 5) });
+      runs.push({ accountId: channel, ok: true, detail: tail(`${stdout}\n${stderr}`, 5) });
       onProgress?.({ kind: 'account-done', accountId: channel, ok: true });
 
       await recordSync(channel, {
@@ -241,7 +231,7 @@ async function syncChannels(
         indexedMessages: undefined,
       });
     } catch (cause) {
-      const detail = tail(withoutLoopbackWarning(describeUnknownError(cause)), 5);
+      const detail = describeSyncFailure(cause);
 
       logger.warn('account sync failed', { accountId: channel, detail });
 

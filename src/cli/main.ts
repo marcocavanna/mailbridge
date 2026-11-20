@@ -14,7 +14,7 @@ import {
 } from './schedule-actions.js';
 import { listAccounts, showStatus, testAccount } from './account-read-actions.js';
 import { addAccountFlow, editAccountFlow, removeAccountFlow } from './account-write-actions.js';
-import { loginAccount, printAccessToken, requireAccountById } from './account-auth-actions.js';
+import { loginAccount, printAccessToken, requireAccountById, runTunnelCommand } from './account-auth-actions.js';
 import { runSyncQuiet, runSyncWithFeedback, showSyncState, syncFlow } from './sync-actions.js';
 import { colors } from './ui.js';
 
@@ -80,6 +80,23 @@ function buildProgram(): Command {
     .command('remove [accountId]')
     .description('Remove an account from the configuration')
     .action(async (accountId?: string) => framed(async () => removeAccountFlow(accountId))());
+
+  // ---- imap-tunnel
+  program
+    .command('imap-tunnel <accountId>', { hidden: true })
+    .description('IMAP over stdin/stdout for mbsync, signed in with OAuth (run by mbsync, not by hand)')
+    .action(async (accountId: string) => {
+      /**
+       * Not `framed`, no clack, no update check: stdout is the IMAP stream mbsync reads, and a single
+       * stray byte there breaks the protocol. Failures go to stderr, which the sync captures.
+       */
+      try {
+        await runTunnelCommand(accountId);
+      } catch (cause) {
+        process.stderr.write(`mailbridge imap-tunnel: ${describeUnknownError(cause)}\n`);
+        process.exitCode = 1;
+      }
+    });
 
   // ---- sync
   program
